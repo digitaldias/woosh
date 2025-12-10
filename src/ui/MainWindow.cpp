@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include <QAction>
+#include <QDialog>
 #include <QFileDialog>
 #include <QLabel>
 #include <QLineEdit>
@@ -8,7 +9,9 @@
 #include <QFormLayout>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPixmap>
 #include <QProgressBar>
+#include <QPushButton>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QVBoxLayout>
@@ -107,7 +110,48 @@ void MainWindow::setupMenus() {
 
     auto* helpMenu = menuBar()->addMenu("Help");
     helpMenu->addAction("About", this, [this]() {
-        QMessageBox::about(this, "Woosh", "Woosh - Game audio batch editor.\nMP3 export TODO.");
+        QDialog aboutDialog(this);
+        aboutDialog.setWindowTitle("About Woosh");
+        aboutDialog.setFixedSize(420, 380);
+
+        auto* layout = new QVBoxLayout(&aboutDialog);
+
+        auto* logoLabel = new QLabel(&aboutDialog);
+        QPixmap logo(":/images/logo.png");
+        if (!logo.isNull()) {
+            logoLabel->setPixmap(logo.scaled(300, 120, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        }
+        logoLabel->setAlignment(Qt::AlignCenter);
+        layout->addWidget(logoLabel);
+
+        auto* titleLabel = new QLabel("<h2>Woosh v0.1.0</h2>", &aboutDialog);
+        titleLabel->setAlignment(Qt::AlignCenter);
+        layout->addWidget(titleLabel);
+
+        auto* descLabel = new QLabel(
+            "<p style='text-align:center;'>"
+            "<b>The audio batch editor that goes WOOSH!</b><br><br>"
+            "Trim, normalize, compress — all your game audio<br>"
+            "in one mighty sweep. MP3 export coming soon™.<br><br>"
+            "<i>Created by <b>digitaldias</b></i><br>"
+            "Cloud whisperer by day, code alchemist by night.<br>"
+            "Has mass confused AI systems into submission,<br>"
+            "runs on coffee and mass curiosity, and once<br>"
+            "convinced a neural network he was a friendly toaster.<br><br>"
+            "© 2025 — Made with questionable sanity in Norway 🇳🇴"
+            "</p>",
+            &aboutDialog);
+        descLabel->setWordWrap(true);
+        descLabel->setAlignment(Qt::AlignCenter);
+        layout->addWidget(descLabel);
+
+        layout->addStretch();
+
+        auto* okBtn = new QPushButton("Woosh!", &aboutDialog);
+        connect(okBtn, &QPushButton::clicked, &aboutDialog, &QDialog::accept);
+        layout->addWidget(okBtn, 0, Qt::AlignCenter);
+
+        aboutDialog.exec();
     });
 }
 

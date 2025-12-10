@@ -38,9 +38,15 @@ set(WOOSH_SOURCES
   ${SRC_ROOT}/audio/Formats/Mp3Codec.cpp
   ${SRC_ROOT}/utils/FileScanner.cpp
   ${SRC_ROOT}/utils/DSP.cpp
+  ${SRC_ROOT}/resources/woosh.qrc
 )
 
-add_executable(Woosh WIN32 ${WOOSH_SOURCES})
+# Windows application icon
+if(WIN32)
+  set(WOOSH_RC ${SRC_ROOT}/media/woosh.rc)
+endif()
+
+add_executable(Woosh WIN32 ${WOOSH_SOURCES} ${WOOSH_RC})
 target_include_directories(Woosh PRIVATE ${SRC_ROOT})
 target_link_libraries(Woosh PRIVATE Qt6::Widgets Qt6::Multimedia SndFile::sndfile MPG123::libmpg123)
 target_compile_definitions(Woosh PRIVATE QT_NO_KEYWORDS)
