@@ -195,27 +195,17 @@ void WaveformView::resizeEvent(QResizeEvent* event) {
 // ============================================================================
 
 void WaveformView::drawBackground(QPainter& painter, const QRect& rect) {
-    // Gradient background
-    QLinearGradient bg(0, rect.top(), 0, rect.bottom());
-    bg.setColorAt(0.0, QColor(25, 28, 32));
-    bg.setColorAt(0.5, QColor(18, 20, 24));
-    bg.setColorAt(1.0, QColor(25, 28, 32));
-    painter.fillRect(rect, bg);
+    // Solid dark background like reference
+    painter.fillRect(rect, QColor(28, 30, 38));
 
-    // Grid lines (subtle)
-    painter.setPen(QColor(40, 44, 50));
-
-    // Horizontal center line(s)
     int channels = clip_ ? clip_->channels() : 1;
     if (channels >= 2) {
-        int quarterH = rect.height() / 4;
-        painter.drawLine(rect.left(), rect.top() + quarterH, rect.right(), rect.top() + quarterH);
-        painter.drawLine(rect.left(), rect.bottom() - quarterH, rect.right(), rect.bottom() - quarterH);
-        // Channel separator
-        painter.setPen(QColor(50, 55, 65));
-        painter.drawLine(rect.left(), rect.center().y(), rect.right(), rect.center().y());
-    } else {
-        painter.drawLine(rect.left(), rect.center().y(), rect.right(), rect.center().y());
+        // Stereo: draw channel separator
+        int halfHeight = rect.height() / 2;
+
+        // Channel separator line
+        painter.setPen(QColor(55, 60, 75));
+        painter.drawLine(rect.left(), rect.top() + halfHeight, rect.right(), rect.top() + halfHeight);
     }
 }
 
@@ -295,53 +285,36 @@ void WaveformView::drawWaveformChannel(QPainter& painter, const QRect& rect, int
     int centerY = rect.center().y();
     int halfHeight = rect.height() / 2 - 2;
 
-    // Create gradient for waveform
-    QLinearGradient gradient(0, rect.top(), 0, rect.bottom());
+    // Waveform colors - purple/blue like the reference
+    QColor waveColor = channel == 0 ? QColor(130, 140, 220) : QColor(130, 140, 220);
 
-    // Different colors for left/right channels
-    if (channel == 0) {
-        // Left channel - cyan/blue
-        gradient.setColorAt(0.0, QColor(40, 200, 255, 200));
-        gradient.setColorAt(0.5, QColor(60, 140, 200, 255));
-        gradient.setColorAt(1.0, QColor(40, 200, 255, 200));
-    } else {
-        // Right channel - green/teal
-        gradient.setColorAt(0.0, QColor(80, 220, 160, 200));
-        gradient.setColorAt(0.5, QColor(50, 180, 130, 255));
-        gradient.setColorAt(1.0, QColor(80, 220, 160, 200));
-    }
+    painter.setPen(waveColor);
 
-    // Build polygon for filled waveform
-    QPolygonF topLine, bottomLine;
-    topLine.reserve(cache.size());
-    bottomLine.reserve(cache.size());
-
+    // Draw vertical lines for each pixel column (traditional waveform style)
     for (int x = 0; x < static_cast<int>(cache.size()) && x < rect.width(); ++x) {
         const auto& col = cache[x];
 
+        // Get min/max values, flip if needed (for mirrored bottom channel)
         float maxV = flipY ? -col.minVal : col.maxVal;
         float minV = flipY ? -col.maxVal : col.minVal;
 
+        // Map to pixel coordinates
         int yTop = centerY - static_cast<int>(maxV * halfHeight);
         int yBot = centerY - static_cast<int>(minV * halfHeight);
 
-        topLine << QPointF(rect.left() + x, yTop);
-        bottomLine.prepend(QPointF(rect.left() + x, yBot));
+        // Ensure we draw at least 1 pixel
+        if (yTop == yBot) {
+            yBot = yTop + 1;
+        }
+
+        // Draw vertical line from min to max
+        int xPos = rect.left() + x;
+        painter.drawLine(xPos, yTop, xPos, yBot);
     }
 
-    // Combine into closed polygon
-    QPolygonF wavePolygon = topLine + bottomLine;
-
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(gradient);
-    painter.drawPolygon(wavePolygon);
-
-    // Draw outline
-    QPen outlinePen(channel == 0 ? QColor(100, 220, 255) : QColor(100, 230, 180), 1);
-    painter.setPen(outlinePen);
-    painter.setBrush(Qt::NoBrush);
-    painter.drawPolyline(topLine);
-    painter.drawPolyline(bottomLine);
+    // Draw center line (zero crossing)
+    painter.setPen(QColor(70, 75, 85));
+    painter.drawLine(rect.left(), centerY, rect.right(), centerY);
 }
 
 void WaveformView::drawTrimRegion(QPainter& painter, const QRect& rect) {
