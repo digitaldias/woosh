@@ -149,5 +149,9 @@ private:
 
     // Bytes per frame for position calculation
     int bytesPerFrame_ = 0;
+
+    // Output format (may differ from clip if resampling)
+    int outputSampleRate_ = 44100;
+    int outputChannels_ = 2;
 };
 

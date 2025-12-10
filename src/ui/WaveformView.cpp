@@ -1,6 +1,6 @@
 /**
  * @file WaveformView.cpp
- * @brief Implementation of WaveformView widget.
+ * @brief Implementation of WaveformView widget with stereo display.
  */
 
 #include "WaveformView.h"
@@ -10,8 +10,10 @@
 #include <QPaintEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
+#include <QLinearGradient>
 #include <QtMath>
 #include <algorithm>
+#include <cmath>
 
 // ============================================================================
 // Construction
@@ -20,15 +22,9 @@
 WaveformView::WaveformView(QWidget* parent)
     : QWidget(parent)
 {
-    setMinimumHeight(100);
+    setMinimumHeight(120);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
-
-    // Dark background
-    setAutoFillBackground(true);
-    QPalette pal = palette();
-    pal.setColor(QPalette::Window, QColor(30, 30, 35));
-    setPalette(pal);
 }
 
 WaveformView::~WaveformView() = default;
@@ -55,32 +51,39 @@ void WaveformView::setClip(AudioClip* clip) {
 // ============================================================================
 
 void WaveformView::zoomIn() {
-    if (!clip_) return;
-
-    // Halve samples per pixel (zoom in)
-    double newSpp = samplesPerPixel_ / 2.0;
-    if (newSpp < 1.0) newSpp = 1.0;  // Max zoom: 1 sample per pixel
-
-    samplesPerPixel_ = newSpp;
-    cacheValid_ = false;
-    update();
+    zoomAtPoint(width() / 2, 0.5);
 }
 
 void WaveformView::zoomOut() {
+    zoomAtPoint(width() / 2, 2.0);
+}
+
+void WaveformView::zoomAtPoint(int pixelX, double factor) {
     if (!clip_) return;
 
-    // Double samples per pixel (zoom out)
+    // Get frame under cursor before zoom
+    int frameUnderCursor = xToFrame(pixelX);
+
+    // Calculate new samples per pixel
+    double newSpp = samplesPerPixel_ * factor;
+
+    // Clamp to valid range
+    double minSpp = 1.0;  // Max zoom: 1 sample per pixel
     double maxSpp = static_cast<double>(clip_->frameCount()) / width();
-    double newSpp = samplesPerPixel_ * 2.0;
-    if (newSpp > maxSpp) newSpp = maxSpp;
+    newSpp = std::clamp(newSpp, minSpp, maxSpp);
+
+    if (newSpp == samplesPerPixel_) return;
 
     samplesPerPixel_ = newSpp;
-    cacheValid_ = false;
+
+    // Calculate new scroll offset to keep frameUnderCursor at pixelX
+    int newOffset = frameUnderCursor - static_cast<int>(pixelX * samplesPerPixel_);
 
     // Clamp scroll offset
     int maxScroll = std::max(0, static_cast<int>(clip_->frameCount() - width() * samplesPerPixel_));
-    scrollOffsetFrames_ = std::clamp(scrollOffsetFrames_, 0, maxScroll);
+    scrollOffsetFrames_ = std::clamp(newOffset, 0, maxScroll);
 
+    cacheValid_ = false;
     update();
 }
 
@@ -160,22 +163,22 @@ void WaveformView::paintEvent(QPaintEvent* event) {
     QRect rulerRect = rect();
     rulerRect.setTop(rect().bottom() - kRulerHeight);
 
-    // Background
-    painter.fillRect(rect(), QColor(30, 30, 35));
+    drawBackground(painter, waveformRect);
 
     if (!clip_ || clip_->samples().empty()) {
-        // Draw placeholder text
-        painter.setPen(QColor(100, 100, 100));
+        painter.setPen(QColor(80, 80, 90));
+        QFont f = painter.font();
+        f.setPointSize(11);
+        painter.setFont(f);
         painter.drawText(waveformRect, Qt::AlignCenter, "Select a clip to preview");
+        drawTimeRuler(painter, rulerRect);
         return;
     }
 
-    // Compute cache if needed
     if (!cacheValid_) {
         computeWaveformCache();
     }
 
-    // Draw in order: waveform, trim region, playhead, ruler
     drawWaveform(painter, waveformRect);
     drawTrimRegion(painter, waveformRect);
     drawPlayhead(painter, waveformRect);
@@ -188,11 +191,40 @@ void WaveformView::resizeEvent(QResizeEvent* event) {
 }
 
 // ============================================================================
+// Background rendering
+// ============================================================================
+
+void WaveformView::drawBackground(QPainter& painter, const QRect& rect) {
+    // Gradient background
+    QLinearGradient bg(0, rect.top(), 0, rect.bottom());
+    bg.setColorAt(0.0, QColor(25, 28, 32));
+    bg.setColorAt(0.5, QColor(18, 20, 24));
+    bg.setColorAt(1.0, QColor(25, 28, 32));
+    painter.fillRect(rect, bg);
+
+    // Grid lines (subtle)
+    painter.setPen(QColor(40, 44, 50));
+
+    // Horizontal center line(s)
+    int channels = clip_ ? clip_->channels() : 1;
+    if (channels >= 2) {
+        int quarterH = rect.height() / 4;
+        painter.drawLine(rect.left(), rect.top() + quarterH, rect.right(), rect.top() + quarterH);
+        painter.drawLine(rect.left(), rect.bottom() - quarterH, rect.right(), rect.bottom() - quarterH);
+        // Channel separator
+        painter.setPen(QColor(50, 55, 65));
+        painter.drawLine(rect.left(), rect.center().y(), rect.right(), rect.center().y());
+    } else {
+        painter.drawLine(rect.left(), rect.center().y(), rect.right(), rect.center().y());
+    }
+}
+
+// ============================================================================
 // Waveform rendering
 // ============================================================================
 
 void WaveformView::computeWaveformCache() {
-    waveformCache_.clear();
+    channelCache_.clear();
     if (!clip_ || clip_->samples().empty()) {
         cacheValid_ = true;
         return;
@@ -203,22 +235,23 @@ void WaveformView::computeWaveformCache() {
     size_t frameCount = clip_->frameCount();
     int widgetWidth = width();
 
-    waveformCache_.resize(widgetWidth);
+    channelCache_.resize(channels);
+    for (int ch = 0; ch < channels; ++ch) {
+        channelCache_[ch].resize(widgetWidth);
+    }
 
     for (int x = 0; x < widgetWidth; ++x) {
-        // Map pixel to frame range
         int startFrame = scrollOffsetFrames_ + static_cast<int>(x * samplesPerPixel_);
         int endFrame = scrollOffsetFrames_ + static_cast<int>((x + 1) * samplesPerPixel_);
 
         startFrame = std::clamp(startFrame, 0, static_cast<int>(frameCount) - 1);
         endFrame = std::clamp(endFrame, startFrame + 1, static_cast<int>(frameCount));
 
-        float minVal = 0.0f;
-        float maxVal = 0.0f;
+        for (int ch = 0; ch < channels; ++ch) {
+            float minVal = 0.0f;
+            float maxVal = 0.0f;
 
-        // Find min/max across all channels in this frame range
-        for (int f = startFrame; f < endFrame; ++f) {
-            for (int ch = 0; ch < channels; ++ch) {
+            for (int f = startFrame; f < endFrame; ++f) {
                 size_t idx = static_cast<size_t>(f * channels + ch);
                 if (idx < samples.size()) {
                     float val = samples[idx];
@@ -226,38 +259,89 @@ void WaveformView::computeWaveformCache() {
                     maxVal = std::max(maxVal, val);
                 }
             }
-        }
 
-        waveformCache_[x] = {minVal, maxVal};
+            channelCache_[ch][x] = {minVal, maxVal};
+        }
     }
 
     cacheValid_ = true;
 }
 
 void WaveformView::drawWaveform(QPainter& painter, const QRect& rect) {
-    if (waveformCache_.empty()) return;
+    if (channelCache_.empty()) return;
+
+    int channels = static_cast<int>(channelCache_.size());
+
+    if (channels >= 2) {
+        // Stereo: top half = left, bottom half = right
+        int halfHeight = (rect.height() - kChannelGap) / 2;
+
+        QRect leftRect(rect.left(), rect.top(), rect.width(), halfHeight);
+        QRect rightRect(rect.left(), rect.top() + halfHeight + kChannelGap, rect.width(), halfHeight);
+
+        drawWaveformChannel(painter, leftRect, 0, false);
+        drawWaveformChannel(painter, rightRect, 1, true);
+    } else {
+        // Mono: use full height
+        drawWaveformChannel(painter, rect, 0, false);
+    }
+}
+
+void WaveformView::drawWaveformChannel(QPainter& painter, const QRect& rect, int channel, bool flipY) {
+    if (channel >= static_cast<int>(channelCache_.size())) return;
+    const auto& cache = channelCache_[channel];
+    if (cache.empty()) return;
 
     int centerY = rect.center().y();
-    int halfHeight = rect.height() / 2 - 4;  // Leave some margin
+    int halfHeight = rect.height() / 2 - 2;
 
-    // Waveform color
-    QColor waveColor(80, 180, 255);
-    painter.setPen(waveColor);
+    // Create gradient for waveform
+    QLinearGradient gradient(0, rect.top(), 0, rect.bottom());
 
-    for (int x = 0; x < static_cast<int>(waveformCache_.size()) && x < rect.width(); ++x) {
-        const auto& col = waveformCache_[x];
-
-        // Map sample values [-1, 1] to pixel coordinates
-        int yMin = centerY - static_cast<int>(col.maxVal * halfHeight);
-        int yMax = centerY - static_cast<int>(col.minVal * halfHeight);
-
-        // Draw vertical line for this column
-        painter.drawLine(rect.left() + x, yMin, rect.left() + x, yMax);
+    // Different colors for left/right channels
+    if (channel == 0) {
+        // Left channel - cyan/blue
+        gradient.setColorAt(0.0, QColor(40, 200, 255, 200));
+        gradient.setColorAt(0.5, QColor(60, 140, 200, 255));
+        gradient.setColorAt(1.0, QColor(40, 200, 255, 200));
+    } else {
+        // Right channel - green/teal
+        gradient.setColorAt(0.0, QColor(80, 220, 160, 200));
+        gradient.setColorAt(0.5, QColor(50, 180, 130, 255));
+        gradient.setColorAt(1.0, QColor(80, 220, 160, 200));
     }
 
-    // Draw center line
-    painter.setPen(QColor(60, 60, 65));
-    painter.drawLine(rect.left(), centerY, rect.right(), centerY);
+    // Build polygon for filled waveform
+    QPolygonF topLine, bottomLine;
+    topLine.reserve(cache.size());
+    bottomLine.reserve(cache.size());
+
+    for (int x = 0; x < static_cast<int>(cache.size()) && x < rect.width(); ++x) {
+        const auto& col = cache[x];
+
+        float maxV = flipY ? -col.minVal : col.maxVal;
+        float minV = flipY ? -col.maxVal : col.minVal;
+
+        int yTop = centerY - static_cast<int>(maxV * halfHeight);
+        int yBot = centerY - static_cast<int>(minV * halfHeight);
+
+        topLine << QPointF(rect.left() + x, yTop);
+        bottomLine.prepend(QPointF(rect.left() + x, yBot));
+    }
+
+    // Combine into closed polygon
+    QPolygonF wavePolygon = topLine + bottomLine;
+
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(gradient);
+    painter.drawPolygon(wavePolygon);
+
+    // Draw outline
+    QPen outlinePen(channel == 0 ? QColor(100, 220, 255) : QColor(100, 230, 180), 1);
+    painter.setPen(outlinePen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawPolyline(topLine);
+    painter.drawPolyline(bottomLine);
 }
 
 void WaveformView::drawTrimRegion(QPainter& painter, const QRect& rect) {
@@ -266,8 +350,8 @@ void WaveformView::drawTrimRegion(QPainter& painter, const QRect& rect) {
     int maxFrame = static_cast<int>(clip_->frameCount());
     int effectiveEndFrame = (trimEndFrame_ > 0) ? trimEndFrame_ : maxFrame;
 
-    // Draw grayed-out regions for trimmed parts
-    QColor trimmedColor(0, 0, 0, 120);
+    // Semi-transparent overlay for trimmed regions
+    QColor trimmedColor(0, 0, 0, 140);
 
     // Left trimmed region
     if (trimStartFrame_ > 0) {
@@ -286,31 +370,37 @@ void WaveformView::drawTrimRegion(QPainter& painter, const QRect& rect) {
     }
 
     // Draw trim handles
-    QColor handleColor(255, 200, 100);
-    painter.setPen(QPen(handleColor, 2));
+    QColor handleColor(255, 180, 60);
+    QColor handleLineColor(255, 200, 80);
 
     // Start handle
     int xStart = frameToX(trimStartFrame_);
-    if (xStart >= rect.left() && xStart <= rect.right()) {
+    if (xStart >= rect.left() - kHandleWidth && xStart <= rect.right()) {
+        // Handle line
+        painter.setPen(QPen(handleLineColor, 2));
         painter.drawLine(xStart, rect.top(), xStart, rect.bottom());
-        // Draw triangle handle
+
+        // Triangle grip
         QPolygon startHandle;
         startHandle << QPoint(xStart, rect.top())
                     << QPoint(xStart + kHandleWidth, rect.top())
-                    << QPoint(xStart, rect.top() + kHandleWidth);
+                    << QPoint(xStart, rect.top() + kHandleWidth * 2);
+        painter.setPen(Qt::NoPen);
         painter.setBrush(handleColor);
         painter.drawPolygon(startHandle);
     }
 
     // End handle
     int xEnd = frameToX(effectiveEndFrame);
-    if (xEnd >= rect.left() && xEnd <= rect.right()) {
+    if (xEnd >= rect.left() && xEnd <= rect.right() + kHandleWidth) {
+        painter.setPen(QPen(handleLineColor, 2));
         painter.drawLine(xEnd, rect.top(), xEnd, rect.bottom());
-        // Draw triangle handle
+
         QPolygon endHandle;
         endHandle << QPoint(xEnd, rect.top())
                   << QPoint(xEnd - kHandleWidth, rect.top())
-                  << QPoint(xEnd, rect.top() + kHandleWidth);
+                  << QPoint(xEnd, rect.top() + kHandleWidth * 2);
+        painter.setPen(Qt::NoPen);
         painter.setBrush(handleColor);
         painter.drawPolygon(endHandle);
     }
@@ -321,39 +411,56 @@ void WaveformView::drawPlayhead(QPainter& painter, const QRect& rect) {
 
     int x = frameToX(playheadFrame_);
     if (x >= rect.left() && x <= rect.right()) {
+        // Glow effect
+        QLinearGradient glow(x - 4, 0, x + 4, 0);
+        glow.setColorAt(0.0, QColor(255, 60, 60, 0));
+        glow.setColorAt(0.5, QColor(255, 60, 60, 80));
+        glow.setColorAt(1.0, QColor(255, 60, 60, 0));
+        painter.fillRect(x - 4, rect.top(), 8, rect.height(), glow);
+
+        // Main line
         painter.setPen(QPen(QColor(255, 80, 80), 2));
         painter.drawLine(x, rect.top(), x, rect.bottom());
     }
 }
 
 void WaveformView::drawTimeRuler(QPainter& painter, const QRect& rect) {
-    if (!clip_) return;
+    // Ruler background
+    QLinearGradient bg(0, rect.top(), 0, rect.bottom());
+    bg.setColorAt(0.0, QColor(40, 44, 50));
+    bg.setColorAt(1.0, QColor(30, 34, 40));
+    painter.fillRect(rect, bg);
 
-    painter.fillRect(rect, QColor(40, 40, 45));
-    painter.setPen(QColor(150, 150, 150));
+    // Top border
+    painter.setPen(QColor(60, 65, 75));
+    painter.drawLine(rect.left(), rect.top(), rect.right(), rect.top());
+
+    if (!clip_) return;
 
     int sampleRate = clip_->sampleRate();
     if (sampleRate <= 0) return;
 
-    // Calculate tick interval based on zoom level
+    painter.setPen(QColor(140, 145, 155));
+
     double secondsPerPixel = samplesPerPixel_ / sampleRate;
     double viewSeconds = width() * secondsPerPixel;
 
-    // Choose appropriate interval
-    double interval = 0.1;  // Default: 100ms ticks
-    if (viewSeconds > 60) interval = 10.0;
+    // Choose tick interval
+    double interval = 0.1;
+    if (viewSeconds > 120) interval = 30.0;
+    else if (viewSeconds > 60) interval = 10.0;
     else if (viewSeconds > 30) interval = 5.0;
     else if (viewSeconds > 10) interval = 1.0;
     else if (viewSeconds > 5) interval = 0.5;
+    else if (viewSeconds > 2) interval = 0.2;
     else if (viewSeconds > 1) interval = 0.1;
     else interval = 0.05;
 
-    // Draw ticks
     double startTime = static_cast<double>(scrollOffsetFrames_) / sampleRate;
     double firstTick = std::ceil(startTime / interval) * interval;
 
     QFont smallFont = painter.font();
-    smallFont.setPointSize(8);
+    smallFont.setPointSize(9);
     painter.setFont(smallFont);
 
     for (double t = firstTick; t < startTime + viewSeconds + interval; t += interval) {
@@ -361,19 +468,23 @@ void WaveformView::drawTimeRuler(QPainter& painter, const QRect& rect) {
         int x = frameToX(frame);
 
         if (x >= rect.left() && x <= rect.right()) {
-            painter.drawLine(x, rect.top(), x, rect.top() + 5);
+            // Major tick
+            painter.setPen(QColor(100, 105, 115));
+            painter.drawLine(x, rect.top() + 2, x, rect.top() + 8);
 
-            // Format time label
+            // Time label
             QString label;
-            if (interval >= 1.0) {
-                int mins = static_cast<int>(t) / 60;
-                int secs = static_cast<int>(t) % 60;
-                label = QString("%1:%2").arg(mins).arg(secs, 2, 10, QChar('0'));
+            int mins = static_cast<int>(t) / 60;
+            double secs = std::fmod(t, 60.0);
+
+            if (mins > 0) {
+                label = QString("%1:%2").arg(mins).arg(secs, 5, 'f', 2, '0');
             } else {
-                label = QString::number(t, 'f', 2);
+                label = QString::number(secs, 'f', 2);
             }
 
-            painter.drawText(x + 2, rect.bottom() - 3, label);
+            painter.setPen(QColor(160, 165, 175));
+            painter.drawText(x + 3, rect.bottom() - 5, label);
         }
     }
 }
@@ -403,12 +514,10 @@ WaveformView::HandleHit WaveformView::hitTestTrimHandle(int x) const {
     int xStart = frameToX(trimStartFrame_);
     int xEnd = frameToX(effectiveEndFrame);
 
-    // Check start handle
     if (std::abs(x - xStart) <= kHandleWidth) {
         return HandleHit::Start;
     }
 
-    // Check end handle
     if (std::abs(x - xEnd) <= kHandleWidth) {
         return HandleHit::End;
     }
@@ -436,15 +545,14 @@ void WaveformView::mousePressEvent(QMouseEvent* event) {
             int maxFrame = static_cast<int>(clip_->frameCount());
             dragStartValue_ = (trimEndFrame_ > 0) ? trimEndFrame_ : maxFrame;
         } else {
-            // Click on waveform -> seek
             int frame = xToFrame(event->pos().x());
             Q_EMIT seekRequested(frame);
         }
     } else if (event->button() == Qt::MiddleButton) {
-        // Middle button drag for scrolling
         dragMode_ = DragMode::Scroll;
         dragStartX_ = event->pos().x();
         dragStartValue_ = scrollOffsetFrames_;
+        setCursor(Qt::ClosedHandCursor);
     }
 
     QWidget::mousePressEvent(event);
@@ -471,7 +579,6 @@ void WaveformView::mouseMoveEvent(QMouseEvent* event) {
         cacheValid_ = false;
         update();
     } else {
-        // Update cursor based on hover
         HandleHit hit = hitTestTrimHandle(x);
         if (hit != HandleHit::None) {
             setCursor(Qt::SizeHorCursor);
@@ -484,6 +591,9 @@ void WaveformView::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void WaveformView::mouseReleaseEvent(QMouseEvent* event) {
+    if (dragMode_ == DragMode::Scroll) {
+        setCursor(Qt::ArrowCursor);
+    }
     dragMode_ = DragMode::None;
     QWidget::mouseReleaseEvent(event);
 }
@@ -491,20 +601,17 @@ void WaveformView::mouseReleaseEvent(QMouseEvent* event) {
 void WaveformView::wheelEvent(QWheelEvent* event) {
     if (!clip_) return;
 
-    // Get scroll amount
     int delta = event->angleDelta().y();
 
     if (event->modifiers() & Qt::ControlModifier) {
-        // Ctrl+wheel = zoom
-        if (delta > 0) {
-            zoomIn();
-        } else {
-            zoomOut();
-        }
+        // Zoom centered on cursor position
+        int cursorX = static_cast<int>(event->position().x());
+        double factor = (delta > 0) ? 0.7 : 1.4;  // Smoother zoom
+        zoomAtPoint(cursorX, factor);
     } else {
-        // Regular wheel = scroll
-        int scrollDelta = static_cast<int>(delta * samplesPerPixel_);
-        int newOffset = scrollOffsetFrames_ - scrollDelta;
+        // Scroll
+        int scrollAmount = static_cast<int>(delta * samplesPerPixel_ * 0.5);
+        int newOffset = scrollOffsetFrames_ - scrollAmount;
 
         int maxScroll = std::max(0, static_cast<int>(clip_->frameCount() - width() * samplesPerPixel_));
         scrollOffsetFrames_ = std::clamp(newOffset, 0, maxScroll);
