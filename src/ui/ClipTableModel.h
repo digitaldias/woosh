@@ -56,20 +56,22 @@ public:
 
     /**
      * @brief Notify the view that the underlying clips data has changed.
-     *
-     * Call this after loading, processing, or removing clips to refresh the view.
      */
     void refresh();
 
     /**
      * @brief Get the AudioClip at a given row.
-     * @param row The row index.
-     * @return Pointer to the clip, or nullptr if out of range.
      */
     AudioClip* clipAt(int row);
     const AudioClip* clipAt(int row) const;
 
-private:
-    std::vector<AudioClip>& clips_;  ///< Reference to the clips collection
-};
+    /**
+     * @brief Enable or disable column header tooltips.
+     */
+    void setShowTooltips(bool show);
+    bool showTooltips() const;
 
+private:
+    std::vector<AudioClip>& clips_;
+    bool showTooltips_ = true;
+};

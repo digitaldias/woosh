@@ -9,6 +9,8 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QFrame>
+#include <QFont>
+#include <cmath>
 
 // ============================================================================
 // Construction
@@ -29,15 +31,25 @@ void TransportPanel::setupUi() {
     layout->setContentsMargins(4, 4, 4, 4);
     layout->setSpacing(4);
 
+    // Use a font that supports the media control symbols
+    QFont symbolFont("Segoe UI Symbol", 12);
+    if (!symbolFont.exactMatch()) {
+        symbolFont = QFont("Arial Unicode MS", 12);
+    }
+
     // --- Playback controls ---
-    playPauseBtn_ = new QPushButton(QStringLiteral("\u25B6"), this);  // Play triangle
-    playPauseBtn_->setFixedSize(32, 28);
-    playPauseBtn_->setToolTip("Play / Pause (Space)");
+    playPauseBtn_ = new QPushButton(this);
+    playPauseBtn_->setFont(symbolFont);
+    playPauseBtn_->setText(QString::fromUtf8("\u25B6"));  // Play triangle ▶
+    playPauseBtn_->setFixedSize(36, 32);
+    playPauseBtn_->setToolTip(tr("Play / Pause (Space)"));
     connect(playPauseBtn_, &QPushButton::clicked, this, &TransportPanel::playPauseClicked);
 
-    stopBtn_ = new QPushButton(QStringLiteral("\u25A0"), this);  // Stop square
-    stopBtn_->setFixedSize(32, 28);
-    stopBtn_->setToolTip("Stop");
+    stopBtn_ = new QPushButton(this);
+    stopBtn_->setFont(symbolFont);
+    stopBtn_->setText(QString::fromUtf8("\u25A0"));  // Stop square ■
+    stopBtn_->setFixedSize(36, 32);
+    stopBtn_->setToolTip(tr("Stop"));
     connect(stopBtn_, &QPushButton::clicked, this, &TransportPanel::stopClicked);
 
     layout->addWidget(playPauseBtn_);
@@ -50,19 +62,19 @@ void TransportPanel::setupUi() {
     layout->addWidget(sep1);
 
     // --- Zoom controls ---
-    zoomOutBtn_ = new QPushButton("-", this);
-    zoomOutBtn_->setFixedSize(28, 28);
-    zoomOutBtn_->setToolTip("Zoom Out (Ctrl+-)");
+    zoomOutBtn_ = new QPushButton(QString::fromUtf8("\u2212"), this);  // Minus sign −
+    zoomOutBtn_->setFixedSize(32, 32);
+    zoomOutBtn_->setToolTip(tr("Zoom Out"));
     connect(zoomOutBtn_, &QPushButton::clicked, this, &TransportPanel::zoomOutClicked);
 
     zoomInBtn_ = new QPushButton("+", this);
-    zoomInBtn_->setFixedSize(28, 28);
-    zoomInBtn_->setToolTip("Zoom In (Ctrl++)");
+    zoomInBtn_->setFixedSize(32, 32);
+    zoomInBtn_->setToolTip(tr("Zoom In"));
     connect(zoomInBtn_, &QPushButton::clicked, this, &TransportPanel::zoomInClicked);
 
-    zoomFitBtn_ = new QPushButton("Fit", this);
-    zoomFitBtn_->setFixedWidth(40);
-    zoomFitBtn_->setToolTip("Fit waveform to window");
+    zoomFitBtn_ = new QPushButton(tr("Fit"), this);
+    zoomFitBtn_->setFixedWidth(44);
+    zoomFitBtn_->setToolTip(tr("Fit waveform to window"));
     connect(zoomFitBtn_, &QPushButton::clicked, this, &TransportPanel::zoomFitClicked);
 
     layout->addWidget(zoomOutBtn_);
@@ -76,17 +88,22 @@ void TransportPanel::setupUi() {
     layout->addWidget(sep2);
 
     // --- Time display ---
-    timeLabel_ = new QLabel("0:00 / 0:00", this);
-    timeLabel_->setMinimumWidth(100);
+    timeLabel_ = new QLabel("0.00 / 0.00", this);
+    timeLabel_->setMinimumWidth(110);
     timeLabel_->setAlignment(Qt::AlignCenter);
+    QFont monoFont("Consolas", 10);
+    if (!monoFont.exactMatch()) {
+        monoFont = QFont("Courier New", 10);
+    }
+    timeLabel_->setFont(monoFont);
     layout->addWidget(timeLabel_);
 
     // Stretch to push trim button to the right
     layout->addStretch();
 
     // --- Trim controls ---
-    applyTrimBtn_ = new QPushButton("Apply Trim", this);
-    applyTrimBtn_->setToolTip("Apply trim markers to clip");
+    applyTrimBtn_ = new QPushButton(tr("Apply Trim"), this);
+    applyTrimBtn_->setToolTip(tr("Apply trim markers to clip"));
     applyTrimBtn_->setEnabled(false);
     connect(applyTrimBtn_, &QPushButton::clicked, this, &TransportPanel::applyTrimClicked);
 
@@ -99,11 +116,11 @@ void TransportPanel::setupUi() {
 
 void TransportPanel::setPlaying(bool playing) {
     if (playing) {
-        playPauseBtn_->setText(QStringLiteral("\u2016"));  // Pause bars
-        playPauseBtn_->setToolTip("Pause (Space)");
+        playPauseBtn_->setText(QString::fromUtf8("\u23F8"));  // Pause ⏸
+        playPauseBtn_->setToolTip(tr("Pause (Space)"));
     } else {
-        playPauseBtn_->setText(QStringLiteral("\u25B6"));  // Play triangle
-        playPauseBtn_->setToolTip("Play (Space)");
+        playPauseBtn_->setText(QString::fromUtf8("\u25B6"));  // Play ▶
+        playPauseBtn_->setToolTip(tr("Play (Space)"));
     }
 }
 
@@ -139,4 +156,3 @@ QString TransportPanel::formatTime(double seconds) const {
             .arg(ms, 2, 10, QChar('0'));
     }
 }
-

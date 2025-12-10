@@ -13,6 +13,7 @@
 #include <QHeaderView>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPixmap>
@@ -29,6 +30,7 @@
 #include "ui/ClipTableModel.h"
 #include "ui/OutputPanel.h"
 #include "ui/ProcessingPanel.h"
+#include "ui/SettingsDialog.h"
 #include "ui/TransportPanel.h"
 #include "ui/WaveformView.h"
 #include "utils/FileScanner.h"
@@ -40,6 +42,8 @@ constexpr const char* kSettingsApp = "WooshEditor";
 constexpr const char* kKeyLastDir = "LastOpenDirectory";
 constexpr const char* kKeyOutputDir = "OutputDirectory";
 constexpr const char* kKeyWindowGeom = "WindowGeometry";
+constexpr const char* kKeyRecentFiles = "RecentFiles";
+constexpr const char* kKeyRecentFolders = "RecentFolders";
 }  // namespace
 
 // ============================================================================
@@ -62,10 +66,14 @@ MainWindow::~MainWindow() {
 
 void MainWindow::loadSettings() {
     lastOpenDirectory_ = settings_->value(kKeyLastDir, QDir::homePath()).toString();
+    recentFiles_ = settings_->value(kKeyRecentFiles).toStringList();
+    recentFolders_ = settings_->value(kKeyRecentFolders).toStringList();
 }
 
 void MainWindow::saveSettings() {
     settings_->setValue(kKeyLastDir, lastOpenDirectory_);
+    settings_->setValue(kKeyRecentFiles, recentFiles_);
+    settings_->setValue(kKeyRecentFolders, recentFolders_);
     if (outputPanel_) {
         settings_->setValue(kKeyOutputDir, outputPanel_->outputFolder());
     }
@@ -83,10 +91,9 @@ void MainWindow::setupUi() {
     auto* central = new QWidget(this);
     auto* mainLayout = new QVBoxLayout(central);
 
-    // --- Main splitter: left = clip table, right = waveform + panels ---
     auto* splitter = new QSplitter(Qt::Horizontal, central);
 
-    // Left pane: Clip table with sortable columns
+    // Left pane: Clip table
     clipModel_ = new ClipTableModel(clips_, this);
     proxyModel_ = new QSortFilterProxyModel(this);
     proxyModel_->setSourceModel(clipModel_);
@@ -106,72 +113,53 @@ void MainWindow::setupUi() {
     connect(clipTable_->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &MainWindow::onSelectionChanged);
 
-    // Right pane: Waveform + Transport + Processing + Output panels
+    // Right pane
     auto* rightPane = new QWidget(splitter);
     auto* rightLayout = new QVBoxLayout(rightPane);
     rightLayout->setContentsMargins(0, 0, 0, 0);
     rightLayout->setSpacing(4);
 
-    // Waveform view
     waveformView_ = new WaveformView(rightPane);
     waveformView_->setMinimumHeight(200);
-    rightLayout->addWidget(waveformView_, 1);  // Stretch factor 1
+    rightLayout->addWidget(waveformView_, 1);
 
-    connect(waveformView_, &WaveformView::seekRequested,
-            this, &MainWindow::onSeek);
-    connect(waveformView_, &WaveformView::trimChanged,
-            this, &MainWindow::onTrimChanged);
+    connect(waveformView_, &WaveformView::seekRequested, this, &MainWindow::onSeek);
+    connect(waveformView_, &WaveformView::trimChanged, this, &MainWindow::onTrimChanged);
 
-    // Transport controls (play/pause/stop, zoom, time, trim apply)
     transportPanel_ = new TransportPanel(rightPane);
     rightLayout->addWidget(transportPanel_);
 
-    connect(transportPanel_, &TransportPanel::playPauseClicked,
-            this, &MainWindow::onPlayPause);
-    connect(transportPanel_, &TransportPanel::stopClicked,
-            this, &MainWindow::onStop);
-    connect(transportPanel_, &TransportPanel::zoomInClicked,
-            waveformView_, &WaveformView::zoomIn);
-    connect(transportPanel_, &TransportPanel::zoomOutClicked,
-            waveformView_, &WaveformView::zoomOut);
-    connect(transportPanel_, &TransportPanel::zoomFitClicked,
-            waveformView_, &WaveformView::zoomToFit);
-    connect(transportPanel_, &TransportPanel::applyTrimClicked,
-            this, &MainWindow::onApplyTrim);
+    connect(transportPanel_, &TransportPanel::playPauseClicked, this, &MainWindow::onPlayPause);
+    connect(transportPanel_, &TransportPanel::stopClicked, this, &MainWindow::onStop);
+    connect(transportPanel_, &TransportPanel::zoomInClicked, waveformView_, &WaveformView::zoomIn);
+    connect(transportPanel_, &TransportPanel::zoomOutClicked, waveformView_, &WaveformView::zoomOut);
+    connect(transportPanel_, &TransportPanel::zoomFitClicked, waveformView_, &WaveformView::zoomToFit);
+    connect(transportPanel_, &TransportPanel::applyTrimClicked, this, &MainWindow::onApplyTrim);
 
-    // Processing panel (normalize, compress, apply buttons)
     processingPanel_ = new ProcessingPanel(rightPane);
     rightLayout->addWidget(processingPanel_);
 
-    connect(processingPanel_, &ProcessingPanel::applyToSelected,
-            this, &MainWindow::onApplyToSelected);
-    connect(processingPanel_, &ProcessingPanel::applyToAll,
-            this, &MainWindow::onApplyToAll);
+    connect(processingPanel_, &ProcessingPanel::applyToSelected, this, &MainWindow::onApplyToSelected);
+    connect(processingPanel_, &ProcessingPanel::applyToAll, this, &MainWindow::onApplyToAll);
 
-    // Output panel (folder, overwrite, export buttons)
     outputPanel_ = new OutputPanel(rightPane);
     rightLayout->addWidget(outputPanel_);
 
-    // Restore saved output folder
     QString savedOutput = settings_->value(kKeyOutputDir).toString();
     if (!savedOutput.isEmpty()) {
         outputPanel_->setOutputFolder(savedOutput);
     }
 
-    connect(outputPanel_, &OutputPanel::exportSelected,
-            this, &MainWindow::onExportSelected);
-    connect(outputPanel_, &OutputPanel::exportAll,
-            this, &MainWindow::onExportAll);
+    connect(outputPanel_, &OutputPanel::exportSelected, this, &MainWindow::onExportSelected);
+    connect(outputPanel_, &OutputPanel::exportAll, this, &MainWindow::onExportAll);
 
     rightLayout->addStretch();
 
-    // Add panes to splitter
     splitter->addWidget(clipTable_);
     splitter->addWidget(rightPane);
     splitter->setStretchFactor(0, 2);
     splitter->setStretchFactor(1, 1);
 
-    // Progress bar at bottom
     progressBar_ = new QProgressBar(central);
     progressBar_->setMinimum(0);
     progressBar_->setMaximum(100);
@@ -183,22 +171,16 @@ void MainWindow::setupUi() {
 
     setCentralWidget(central);
 
-    // Status bar label
     statusLabel_ = new QLabel(this);
     statusBar()->addPermanentWidget(statusLabel_);
 
-    // Audio player
     audioPlayer_ = new AudioPlayer(this);
-    connect(audioPlayer_, &AudioPlayer::positionChanged,
-            this, &MainWindow::onPlaybackPositionChanged);
-    connect(audioPlayer_, &AudioPlayer::finished,
-            this, &MainWindow::onPlaybackFinished);
-    connect(audioPlayer_, &AudioPlayer::stateChanged,
-            this, [this](AudioPlayer::State state) {
-                transportPanel_->setPlaying(state == AudioPlayer::State::Playing);
-            });
+    connect(audioPlayer_, &AudioPlayer::positionChanged, this, &MainWindow::onPlaybackPositionChanged);
+    connect(audioPlayer_, &AudioPlayer::finished, this, &MainWindow::onPlaybackFinished);
+    connect(audioPlayer_, &AudioPlayer::stateChanged, this, [this](AudioPlayer::State state) {
+        transportPanel_->setPlaying(state == AudioPlayer::State::Playing);
+    });
 
-    // Restore window geometry
     QByteArray geom = settings_->value(kKeyWindowGeom).toByteArray();
     if (!geom.isEmpty()) {
         restoreGeometry(geom);
@@ -214,6 +196,21 @@ void MainWindow::setupMenus() {
 
     openFolderAction_ = fileMenu->addAction(tr("Open &Folder..."), this, &MainWindow::openFolder);
     openFolderAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O));
+
+    fileMenu->addSeparator();
+
+    // Recent Files submenu
+    recentFilesMenu_ = fileMenu->addMenu(tr("Recent &Files"));
+    updateRecentFilesMenu();
+
+    // Recent Folders submenu
+    recentFoldersMenu_ = fileMenu->addMenu(tr("Recent F&olders"));
+    updateRecentFoldersMenu();
+
+    fileMenu->addSeparator();
+
+    settingsAction_ = fileMenu->addAction(tr("&Settings..."), this, &MainWindow::openSettings);
+    settingsAction_->setShortcut(QKeySequence::Preferences);
 
     fileMenu->addSeparator();
 
@@ -275,8 +272,152 @@ void MainWindow::setupMenus() {
     });
 }
 
+// ============================================================================
+// Recent files/folders management
+// ============================================================================
+
+void MainWindow::addRecentFile(const QString& path) {
+    recentFiles_.removeAll(path);
+    recentFiles_.prepend(path);
+    while (recentFiles_.size() > kMaxRecentItems) {
+        recentFiles_.removeLast();
+    }
+    updateRecentFilesMenu();
+}
+
+void MainWindow::addRecentFolder(const QString& path) {
+    recentFolders_.removeAll(path);
+    recentFolders_.prepend(path);
+    while (recentFolders_.size() > kMaxRecentItems) {
+        recentFolders_.removeLast();
+    }
+    updateRecentFoldersMenu();
+}
+
+void MainWindow::updateRecentFilesMenu() {
+    if (!recentFilesMenu_) return;
+
+    recentFilesMenu_->clear();
+
+    if (recentFiles_.isEmpty()) {
+        auto* emptyAction = recentFilesMenu_->addAction(tr("(No recent files)"));
+        emptyAction->setEnabled(false);
+        return;
+    }
+
+    for (const QString& path : recentFiles_) {
+        QFileInfo fi(path);
+        QString displayName = fi.fileName();
+        auto* action = recentFilesMenu_->addAction(displayName);
+        action->setData(path);
+        action->setToolTip(path);
+        connect(action, &QAction::triggered, this, &MainWindow::openRecentFile);
+    }
+}
+
+void MainWindow::updateRecentFoldersMenu() {
+    if (!recentFoldersMenu_) return;
+
+    recentFoldersMenu_->clear();
+
+    if (recentFolders_.isEmpty()) {
+        auto* emptyAction = recentFoldersMenu_->addAction(tr("(No recent folders)"));
+        emptyAction->setEnabled(false);
+        return;
+    }
+
+    for (const QString& path : recentFolders_) {
+        QFileInfo fi(path);
+        QString displayName = fi.fileName();
+        if (displayName.isEmpty()) displayName = path;
+        auto* action = recentFoldersMenu_->addAction(displayName);
+        action->setData(path);
+        action->setToolTip(path);
+        connect(action, &QAction::triggered, this, &MainWindow::openRecentFolder);
+    }
+}
+
+void MainWindow::clearRecentHistory() {
+    recentFiles_.clear();
+    recentFolders_.clear();
+    updateRecentFilesMenu();
+    updateRecentFoldersMenu();
+}
+
+void MainWindow::openRecentFile() {
+    auto* action = qobject_cast<QAction*>(sender());
+    if (!action) return;
+
+    QString path = action->data().toString();
+    if (path.isEmpty()) return;
+
+    QFileInfo fi(path);
+    if (!fi.exists()) {
+        QMessageBox::warning(this, tr("File Not Found"),
+            tr("The file no longer exists:\n%1").arg(path));
+        recentFiles_.removeAll(path);
+        updateRecentFilesMenu();
+        return;
+    }
+
+    lastOpenDirectory_ = fi.absolutePath();
+    loadFileList({path});
+    addRecentFile(path);
+}
+
+void MainWindow::openRecentFolder() {
+    auto* action = qobject_cast<QAction*>(sender());
+    if (!action) return;
+
+    QString path = action->data().toString();
+    if (path.isEmpty()) return;
+
+    QDir dir(path);
+    if (!dir.exists()) {
+        QMessageBox::warning(this, tr("Folder Not Found"),
+            tr("The folder no longer exists:\n%1").arg(path));
+        recentFolders_.removeAll(path);
+        updateRecentFoldersMenu();
+        return;
+    }
+
+    lastOpenDirectory_ = path;
+
+    FileScanner scanner;
+    auto found = scanner.scan(path.toStdString());
+
+    if (found.empty()) {
+        QMessageBox::information(this, tr("No Files Found"),
+            tr("No audio files (WAV/MP3) found in the selected folder."));
+        return;
+    }
+
+    QStringList list;
+    list.reserve(static_cast<int>(found.size()));
+    for (const auto& p : found) {
+        list << QString::fromStdString(p);
+    }
+
+    loadFileList(list);
+    addRecentFolder(path);
+}
+
+void MainWindow::openSettings() {
+    SettingsDialog dialog(this);
+    dialog.setShowColumnTooltips(clipModel_->showTooltips());
+
+    connect(&dialog, &SettingsDialog::clearHistoryRequested, this, &MainWindow::onClearHistory);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        clipModel_->setShowTooltips(dialog.showColumnTooltips());
+    }
+}
+
+void MainWindow::onClearHistory() {
+    clearRecentHistory();
+}
+
 void MainWindow::keyPressEvent(QKeyEvent* event) {
-    // Spacebar toggles play/pause
     if (event->key() == Qt::Key_Space && !event->isAutoRepeat()) {
         onPlayPause();
         event->accept();
@@ -291,9 +432,7 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
 
 void MainWindow::openFiles() {
     QStringList files = QFileDialog::getOpenFileNames(
-        this,
-        tr("Open Audio Files"),
-        lastOpenDirectory_,
+        this, tr("Open Audio Files"), lastOpenDirectory_,
         tr("Audio Files (*.wav *.mp3 *.WAV *.MP3)")
     );
 
@@ -303,13 +442,16 @@ void MainWindow::openFiles() {
     lastOpenDirectory_ = info.absolutePath();
 
     loadFileList(files);
+
+    // Add to recent files
+    for (const QString& f : files) {
+        addRecentFile(f);
+    }
 }
 
 void MainWindow::openFolder() {
     QString dir = QFileDialog::getExistingDirectory(
-        this,
-        tr("Open Folder"),
-        lastOpenDirectory_
+        this, tr("Open Folder"), lastOpenDirectory_
     );
 
     if (dir.isEmpty()) return;
@@ -332,6 +474,7 @@ void MainWindow::openFolder() {
     }
 
     loadFileList(list);
+    addRecentFolder(dir);
 }
 
 void MainWindow::loadFileList(const QStringList& paths) {
@@ -345,7 +488,6 @@ void MainWindow::loadFileList(const QStringList& paths) {
     for (const auto& path : paths) {
         auto clipOpt = engine_.loadClip(path.toStdString());
         if (clipOpt) {
-            // Save original samples for undo support
             clipOpt->saveOriginal();
             clips_.push_back(std::move(*clipOpt));
             ++loaded;
@@ -370,7 +512,6 @@ void MainWindow::loadFileList(const QStringList& paths) {
 // ============================================================================
 
 void MainWindow::onSelectionChanged() {
-    // Stop any current playback
     if (audioPlayer_->isPlaying()) {
         audioPlayer_->stop();
     }
@@ -385,12 +526,10 @@ void MainWindow::onSelectionChanged() {
         return;
     }
 
-    // Update waveform and player with first selected clip
     int idx = indices.front();
     if (idx >= 0 && idx < static_cast<int>(clips_.size())) {
         AudioClip* clip = &clips_[static_cast<size_t>(idx)];
 
-        // Status bar info
         statusLabel_->setText(
             tr("%1 | %2s | %3 Hz | %4 ch | Peak: %5 dB | RMS: %6 dB")
                 .arg(QString::fromStdString(clip->displayName()))
@@ -401,16 +540,9 @@ void MainWindow::onSelectionChanged() {
                 .arg(clip->rmsDb(), 0, 'f', 2)
         );
 
-        // Waveform view
         waveformView_->setClip(clip);
-
-        // Audio player
         audioPlayer_->setClip(clip);
-
-        // Time display
         updateTimeDisplay();
-
-        // Enable undo if clip was modified
         undoAction_->setEnabled(clip->hasOriginal() && clip->isModified());
     }
 }
@@ -516,7 +648,7 @@ void MainWindow::onTrimChanged(int startFrame, int endFrame) {
     bool hasTrim = (startFrame > 0 || endFrame > 0);
     transportPanel_->setTrimEnabled(hasTrim);
 
-    // Update playback region to match trim
+    // Update playback region to match trim markers
     audioPlayer_->setPlaybackRegion(startFrame, endFrame);
 }
 
@@ -527,17 +659,14 @@ void MainWindow::onApplyTrim() {
     int startFrame = waveformView_->trimStartFrame();
     int endFrame = waveformView_->trimEndFrame();
 
-    if (startFrame <= 0 && endFrame <= 0) return;  // No trim set
+    if (startFrame <= 0 && endFrame <= 0) return;
 
-    // Apply trim to samples
     int channels = clip->channels();
     int maxFrame = static_cast<int>(clip->frameCount());
-
     int effectiveEnd = (endFrame > 0) ? endFrame : maxFrame;
 
     if (startFrame >= effectiveEnd) return;
 
-    // Extract the trimmed region
     auto& samples = clip->samplesMutable();
     size_t startSample = static_cast<size_t>(startFrame * channels);
     size_t endSample = static_cast<size_t>(effectiveEnd * channels);
@@ -549,12 +678,10 @@ void MainWindow::onApplyTrim() {
     clip->setSamples(std::move(trimmed));
     clip->setModified(true);
 
-    // Recalculate metrics
     engine_.updateClipMetrics(*clip);
 
-    // Clear trim markers and refresh view
     waveformView_->clearTrim();
-    waveformView_->setClip(clip);  // Refresh
+    waveformView_->setClip(clip);
     audioPlayer_->setClip(clip);
     audioPlayer_->setPlaybackRegion(0, 0);
     clipModel_->refresh();
@@ -573,11 +700,10 @@ void MainWindow::onUndoProcessing() {
 
     clip->restoreOriginal();
 
-    // Refresh views
     waveformView_->setClip(clip);
     audioPlayer_->setClip(clip);
     clipModel_->refresh();
-    onSelectionChanged();  // Update status
+    onSelectionChanged();
 
     undoAction_->setEnabled(false);
     statusBar()->showMessage(tr("Restored original for %1").arg(QString::fromStdString(clip->displayName())));
@@ -639,7 +765,6 @@ void MainWindow::applyProcessing(const std::vector<int>& indices, bool normalize
     progressBar_->setVisible(false);
     clipModel_->refresh();
 
-    // Refresh waveform if current clip was processed
     int currentIdx = currentClipIndex();
     if (currentIdx >= 0 && std::find(indices.begin(), indices.end(), currentIdx) != indices.end()) {
         updateWaveformView();
