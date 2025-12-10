@@ -1,0 +1,264 @@
+# Woosh - Multi-Platform Build & Release Workflow
+# Builds for Windows, macOS, and Linux
+# Creates installers and publishes to GitHub Releases on tags
+
+name: Build & Release
+
+on:
+  push:
+    branches: [master, main]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [master, main]
+
+env:
+  BUILD_TYPE: Release
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
+jobs:
+  # ==========================================================================
+  # Windows Build
+  # ==========================================================================
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '01f602195983451bc83e72f4214af2cbc495aa94'
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.6.*'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          modules: 'qtmultimedia'
+          cache: true
+
+      - name: Install dependencies via vcpkg
+        run: |
+          vcpkg install libsndfile:x64-windows mpg123:x64-windows
+
+      - name: Configure CMake
+        run: |
+          cmake -B build `
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
+            -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake `
+            -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }}
+
+      - name: Run Tests
+        working-directory: build
+        run: ctest -C ${{ env.BUILD_TYPE }} --output-on-failure
+
+      - name: Deploy Qt dependencies
+        run: |
+          windeployqt --release --no-translations build/Release/Woosh.exe
+
+      - name: Create ZIP package
+        run: |
+          Compress-Archive -Path build/Release/* -DestinationPath Woosh-${{ github.ref_name }}-Windows-x64.zip
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Woosh-Windows-x64
+          path: Woosh-*-Windows-x64.zip
+
+  # ==========================================================================
+  # macOS Build
+  # ==========================================================================
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '01f602195983451bc83e72f4214af2cbc495aa94'
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.6.*'
+          host: 'mac'
+          target: 'desktop'
+          arch: 'clang_64'
+          modules: 'qtmultimedia'
+          cache: true
+
+      - name: Install dependencies via vcpkg
+        run: |
+          vcpkg install libsndfile:x64-osx mpg123:x64-osx
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_TARGET_TRIPLET=x64-osx
+
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }}
+
+      - name: Run Tests
+        working-directory: build
+        run: ctest -C ${{ env.BUILD_TYPE }} --output-on-failure
+
+      - name: Deploy Qt dependencies
+        run: |
+          macdeployqt build/Woosh.app -dmg
+
+      - name: Rename DMG
+        run: |
+          mv build/Woosh.dmg Woosh-${{ github.ref_name }}-macOS-x64.dmg || \
+          (cd build && zip -r ../Woosh-${{ github.ref_name }}-macOS-x64.zip Woosh.app)
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Woosh-macOS-x64
+          path: Woosh-*-macOS-x64.*
+
+  # ==========================================================================
+  # Linux Build
+  # ==========================================================================
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ninja-build \
+            libgl1-mesa-dev \
+            libasound2-dev \
+            libpulse-dev \
+            libxkbcommon-dev \
+            libxcb-xinerama0 \
+            libxcb-cursor0
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '01f602195983451bc83e72f4214af2cbc495aa94'
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.6.*'
+          host: 'linux'
+          target: 'desktop'
+          arch: 'gcc_64'
+          modules: 'qtmultimedia'
+          cache: true
+
+      - name: Install dependencies via vcpkg
+        run: |
+          vcpkg install libsndfile:x64-linux mpg123:x64-linux
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_TARGET_TRIPLET=x64-linux
+
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }}
+
+      - name: Run Tests
+        working-directory: build
+        run: ctest -C ${{ env.BUILD_TYPE }} --output-on-failure
+
+      - name: Create tarball package
+        run: |
+          mkdir -p package/Woosh
+          cp build/Woosh package/Woosh/
+          cp README.md LICENSE package/Woosh/
+          # Copy required shared libraries
+          ldd build/Woosh | grep "=> /" | awk '{print $3}' | grep -E "(sndfile|mpg123|FLAC|ogg|vorbis|opus)" | xargs -I {} cp {} package/Woosh/ 2>/dev/null || true
+          tar -czvf Woosh-${{ github.ref_name }}-Linux-x64.tar.gz -C package Woosh
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Woosh-Linux-x64
+          path: Woosh-*-Linux-x64.tar.gz
+
+  # ==========================================================================
+  # Create Release (on tag push)
+  # ==========================================================================
+  release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display artifacts
+        run: ls -la artifacts/*/
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Woosh v${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
+          generate_release_notes: true
+          files: |
+            artifacts/Woosh-Windows-x64/*
+            artifacts/Woosh-macOS-x64/*
+            artifacts/Woosh-Linux-x64/*
+          body: |
+            ## Woosh v${{ steps.version.outputs.VERSION }}
+            
+            Audio Batch Editor for Game Developers
+            
+            ### Downloads
+            - **Windows**: `Woosh-v${{ steps.version.outputs.VERSION }}-Windows-x64.zip`
+            - **macOS**: `Woosh-v${{ steps.version.outputs.VERSION }}-macOS-x64.dmg` or `.zip`
+            - **Linux**: `Woosh-v${{ steps.version.outputs.VERSION }}-Linux-x64.tar.gz`
+            
+            ### Installation
+            
+            **Windows**: Extract ZIP and run `Woosh.exe`
+            
+            **macOS**: Open DMG and drag Woosh to Applications
+            
+            **Linux**: Extract tarball and run `./Woosh`
+            
+            ---
+            Created by Pedro G. Dias ([@digitaldias](https://github.com/digitaldias))
+

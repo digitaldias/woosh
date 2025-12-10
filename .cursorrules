@@ -1,0 +1,123 @@
+# Woosh - Audio Batch Editor
+# Cursor AI Instructions & Project Guidelines
+
+## Project Overview
+Woosh is a Qt 6-based audio batch editor for game developers. It allows loading, 
+previewing, trimming, normalizing, and compressing multiple audio files with a 
+modern waveform editor interface.
+
+## Version Management
+
+### IMPORTANT: Bump Version for Each Build
+Before each significant build or release, update the version number in:
+- `CMakeLists.txt` line: `project(Woosh VERSION X.Y.Z LANGUAGES CXX)`
+
+Version format: MAJOR.MINOR.PATCH
+- MAJOR: Breaking changes or major feature releases
+- MINOR: New features, non-breaking improvements  
+- PATCH: Bug fixes, small improvements
+
+Current version info is auto-generated to:
+- `build/generated/Version.h` (C++ header)
+- `build/woosh.rc` (Windows resource file with file properties)
+
+## Technology Stack
+
+- **Language**: C++20
+- **Build System**: CMake 3.21+
+- **GUI Framework**: Qt 6 (Widgets, Multimedia)
+- **Audio I/O**: libsndfile (WAV), mpg123 (MP3 decode)
+- **Package Manager**: vcpkg
+- **Platforms**: Windows, macOS, Linux
+
+## Architecture & Design Choices
+
+### UI Architecture
+- **MainWindow**: Central coordinator, owns all major components
+- **ClipTableModel**: QAbstractTableModel for sortable file list
+- **WaveformView**: Custom QWidget for waveform visualization and editing
+- **AudioPlayer**: Qt Multimedia-based playback with position tracking
+- **TransportPanel**: Play/pause/stop, zoom, trim controls
+- **ProcessingPanel**: Normalize and compress parameter controls
+- **OutputPanel**: Export folder and options
+
+### Audio Processing
+- All processing operates on in-memory float samples (-1.0 to 1.0 range)
+- Original samples are preserved for undo support (AudioClip::saveOriginal)
+- Playback converts to 16-bit PCM on-the-fly
+- Supports resampling when device format differs from clip format
+
+### Key Design Patterns
+1. **RAII**: Use smart pointers and Qt parent-child ownership
+2. **Signal/Slot**: Qt signals for loose coupling between components
+3. **Model/View**: QAbstractTableModel + QSortFilterProxyModel for clip list
+4. **Settings Persistence**: QSettings for user preferences
+
+### Waveform Display
+- Vertical lines per pixel column (traditional DAW style)
+- Stereo: Top half = left channel, bottom half = right channel
+- Min/max value caching per column for efficient rendering
+- Zoom-to-cursor functionality (Ctrl+wheel)
+
+### Audio Playback
+- Uses QAudioSink for streaming playback
+- Position timer (30ms interval) for playhead updates
+- Playback region support for trim preview
+- Format negotiation with fallback resampling
+
+## Code Style Guidelines
+
+### File Organization
+- Keep files under 1000 lines where practical
+- Use `#pragma once` for header guards
+- Group includes: Qt, STL, project headers
+- Use `Q_OBJECT` macro for QObject subclasses
+- Use `Q_SLOTS` and `Q_SIGNALS` (not `slots`/`signals`) for Qt 6 compatibility
+
+### Naming Conventions
+- Classes: PascalCase (e.g., `AudioPlayer`)
+- Methods: camelCase (e.g., `setPlaybackRegion`)
+- Member variables: camelCase with trailing underscore (e.g., `audioPlayer_`)
+- Constants: kPascalCase (e.g., `kMaxRecentItems`)
+
+### Documentation
+- Use Doxygen-style comments for public APIs
+- File-level comment with @file, @brief
+- Brief comments for non-obvious private members
+
+## Common Pitfalls to Avoid
+
+1. **Qt Destruction Order**: Disconnect signals in destructors before cleanup
+2. **Model Reset**: Call `refreshModelPreservingSelection()` to keep selection
+3. **Audio Thread Safety**: Don't access UI from audio callbacks
+4. **Unicode Symbols**: Use appropriate fonts for transport button symbols
+
+## Build & Test Commands
+
+```bash
+# Configure (first time)
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+# Build
+cmake --build build --config Release
+
+# Run tests
+ctest --test-dir build
+
+# Create installer package
+cmake --build build --target package
+```
+
+## GitHub Workflow
+
+The CI/CD pipeline builds for Windows, macOS, and Linux:
+- Triggered on push to master or pull requests
+- Creates release artifacts (installers/zips) on tagged releases
+- Uses vcpkg for dependency management
+
+## Author Information
+
+- **Author**: Pedro G. Dias
+- **Handle**: digitaldias
+- **Repository**: https://github.com/digitaldias/woosh
+
