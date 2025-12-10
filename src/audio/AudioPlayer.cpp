@@ -30,7 +30,21 @@ AudioPlayer::AudioPlayer(QObject* parent)
 }
 
 AudioPlayer::~AudioPlayer() {
-    stop();
+    // Stop timer first to prevent callbacks during destruction
+    if (positionTimer_) {
+        positionTimer_->stop();
+        positionTimer_->disconnect();
+    }
+
+    // Disconnect all signals to prevent callbacks to destroyed objects
+    disconnect();
+
+    // Clean up audio
+    if (audioSink_) {
+        audioSink_->disconnect();
+        audioSink_->stop();
+    }
+
     cleanupAudioOutput();
 }
 

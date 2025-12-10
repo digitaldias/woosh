@@ -62,6 +62,12 @@ MainWindow::MainWindow(QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
+    // Stop and disconnect audio player before child widgets are destroyed
+    if (audioPlayer_) {
+        audioPlayer_->stop();
+        audioPlayer_->disconnect();
+    }
+
     saveSettings();
 }
 
