@@ -49,7 +49,7 @@ endif()
 # ============================================================================
 find_package(Qt6 COMPONENTS Widgets Multimedia REQUIRED)
 find_package(SndFile CONFIG REQUIRED)
-find_package(unofficial-mpg123 CONFIG REQUIRED)
+find_package(mpg123 CONFIG REQUIRED)
 
 # ============================================================================
 # Source Files
@@ -128,7 +128,7 @@ target_link_libraries(Woosh PRIVATE
   Qt6::Widgets 
   Qt6::Multimedia 
   SndFile::sndfile 
-  unofficial::mpg123::mpg123
+  MPG123::libmpg123
 )
 
 target_compile_definitions(Woosh PRIVATE 
@@ -164,7 +164,7 @@ target_include_directories(WooshTests PRIVATE
 
 target_link_libraries(WooshTests PRIVATE 
   SndFile::sndfile 
-  unofficial::mpg123::mpg123
+  MPG123::libmpg123
 )
 
 add_test(NAME WooshTests COMMAND WooshTests)
