@@ -2,6 +2,8 @@
 
 A Qt 6 desktop utility for game audio teams to batch-trim, normalize, and lightly compress WAV/MP3 assets. First iteration focuses on non-destructive edits and WAV export; MP3 export will be added later.
 
+![Woosh Application](./images/woosh_screenshot.png)
+
 ## Features (current)
 - Open WAV and MP3 files (decode via libsndfile + mpg123).
 - View basic metadata (duration, sample rate, channels, peak/RMS).
