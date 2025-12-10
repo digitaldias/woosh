@@ -45,7 +45,7 @@ jobs:
           version: '6.6.*'
           host: 'windows'
           target: 'desktop'
-          arch: 'win64_msvc2019_64'
+          arch: 'win64_msvc2022_64'
           modules: 'qtmultimedia'
           cache: true
 
@@ -188,7 +188,7 @@ jobs:
           version: '6.6.*'
           host: 'linux'
           target: 'desktop'
-          arch: 'linux_gcc_64'
+          arch: 'gcc_64'
           modules: 'qtmultimedia'
           cache: true
 
