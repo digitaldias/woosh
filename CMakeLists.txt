@@ -22,7 +22,7 @@ else()
 endif()
 
 find_package(Qt6 COMPONENTS Widgets Multimedia REQUIRED)
-find_package(libsndfile CONFIG REQUIRED)
+find_package(SndFile CONFIG REQUIRED)
 find_package(mpg123 CONFIG REQUIRED)
 
 set(SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -42,7 +42,7 @@ set(WOOSH_SOURCES
 
 add_executable(Woosh WIN32 ${WOOSH_SOURCES})
 target_include_directories(Woosh PRIVATE ${SRC_ROOT})
-target_link_libraries(Woosh PRIVATE Qt6::Widgets Qt6::Multimedia libsndfile mpg123)
+target_link_libraries(Woosh PRIVATE Qt6::Widgets Qt6::Multimedia SndFile::sndfile MPG123::libmpg123)
 target_compile_definitions(Woosh PRIVATE QT_NO_KEYWORDS)
 set_target_properties(Woosh PROPERTIES
   WIN32_EXECUTABLE TRUE
@@ -58,7 +58,7 @@ add_executable(WooshTests ${SRC_ROOT}/tests/AudioEngineTests.cpp
   ${SRC_ROOT}/utils/DSP.cpp
 )
 target_include_directories(WooshTests PRIVATE ${SRC_ROOT})
-target_link_libraries(WooshTests PRIVATE libsndfile mpg123)
+target_link_libraries(WooshTests PRIVATE SndFile::sndfile MPG123::libmpg123)
 add_test(NAME WooshTests COMMAND WooshTests)
 
 install(TARGETS Woosh
@@ -67,5 +67,6 @@ install(TARGETS Woosh
 )
 
 message(STATUS "Woosh configured with Qt6, libsndfile, mpg123")
+
 
 

@@ -3,7 +3,9 @@
 #include <QAction>
 #include <QFileDialog>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
+#include <QFormLayout>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QProgressBar>
@@ -148,7 +150,7 @@ void MainWindow::refreshList() {
 }
 
 std::optional<size_t> MainWindow::currentIndex() const {
-    auto selected = fileList_->selectedIndexes();
+    auto selected = fileList_->selectionModel()->selectedIndexes();
     if (selected.isEmpty()) return std::nullopt;
     return static_cast<size_t>(selected.first().row());
 }
@@ -157,7 +159,7 @@ void MainWindow::exportSelection() {
     if (clips_.empty()) return;
     auto folder = QFileDialog::getExistingDirectory(this, "Select export folder");
     if (folder.isEmpty()) return;
-    auto indices = fileList_->selectedIndexes();
+    auto indices = fileList_->selectionModel()->selectedIndexes();
     if (indices.isEmpty()) {
         for (size_t i = 0; i < clips_.size(); ++i) {
             engine_.exportWav(clips_[i], folder.toStdString());
@@ -176,7 +178,7 @@ void MainWindow::applyNormalize() {
     bool ok = false;
     const auto target = normalizeTarget_->text().toDouble(&ok);
     if (!ok) return;
-    for (const auto& idx : fileList_->selectedIndexes()) {
+    for (const auto& idx : fileList_->selectionModel()->selectedIndexes()) {
         auto& clip = clips_[static_cast<size_t>(idx.row())];
         engine_.normalizeToPeak(clip, static_cast<float>(target));
     }
@@ -188,7 +190,7 @@ void MainWindow::applyTrim() {
     double start = startTrim_->text().toDouble(&okStart);
     double end = endTrim_->text().toDouble(&okEnd);
     if (!okStart || !okEnd) return;
-    for (const auto& idx : fileList_->selectedIndexes()) {
+    for (const auto& idx : fileList_->selectionModel()->selectedIndexes()) {
         auto& clip = clips_[static_cast<size_t>(idx.row())];
         engine_.trim(clip, static_cast<float>(start), static_cast<float>(end));
     }
@@ -203,7 +205,7 @@ void MainWindow::applyCompress() {
     float release = compRelease_->text().toFloat(&okRel);
     float makeup = compMakeup_->text().toFloat(&okM);
     if (!(okT && okR && okA && okRel && okM)) return;
-    for (const auto& idx : fileList_->selectedIndexes()) {
+    for (const auto& idx : fileList_->selectionModel()->selectedIndexes()) {
         auto& clip = clips_[static_cast<size_t>(idx.row())];
         engine_.compress(clip, threshold, ratio, attack, release, makeup);
     }
@@ -223,5 +225,6 @@ void MainWindow::updateSelection() {
     statusLabel_->setText(formatStats(clip));
     waveformView_->setPlaceholderText(QString("Waveform for %1").arg(clip.displayName()));
 }
+
 
 

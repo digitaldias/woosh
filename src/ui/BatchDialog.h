@@ -15,7 +15,7 @@ public:
     BatchDialog(AudioEngine& engine, std::vector<AudioClip>& clips, QWidget* parent = nullptr);
     ~BatchDialog() override = default;
 
-private slots:
+private Q_SLOTS:
     void runBatch();
 
 private:
@@ -25,5 +25,6 @@ private:
     QProgressBar* progress_ = nullptr;
     QPushButton* runButton_ = nullptr;
 };
+
 
 

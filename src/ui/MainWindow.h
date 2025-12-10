@@ -22,7 +22,7 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override = default;
 
-private slots:
+private Q_SLOTS:
     void openFiles();
     void openFolder();
     void exportSelection();
@@ -63,5 +63,6 @@ private:
     QAction* compressAction_ = nullptr;
     QAction* batchAction_ = nullptr;
 };
+
 
 

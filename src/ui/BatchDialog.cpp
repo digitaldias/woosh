@@ -6,6 +6,7 @@
 #include <QPushButton>
 #include <QFileDialog>
 #include <QLabel>
+#include <QApplication>
 
 BatchDialog::BatchDialog(AudioEngine& engine, std::vector<AudioClip>& clips, QWidget* parent)
     : QDialog(parent), engine_(engine), clips_(clips) {
@@ -30,7 +31,7 @@ BatchDialog::BatchDialog(AudioEngine& engine, std::vector<AudioClip>& clips, QWi
 void BatchDialog::runBatch() {
     auto folder = QFileDialog::getExistingDirectory(this, "Select export folder");
     if (folder.isEmpty()) return;
-    auto selected = list_->selectedIndexes();
+    auto selected = list_->selectionModel()->selectedIndexes();
     std::vector<size_t> indices;
     if (selected.isEmpty()) {
         for (size_t i = 0; i < clips_.size(); ++i) indices.push_back(i);
@@ -48,5 +49,6 @@ void BatchDialog::runBatch() {
     }
     accept();
 }
+
 
 

@@ -18,3 +18,4 @@ void WaveformView::paintEvent(QPaintEvent* event) {
 }
 
 
+
