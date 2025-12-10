@@ -16,9 +16,9 @@ static std::vector<float> makeSine(float freq, int sr, int frames, int channels)
 
 static void testNormalizePeak() {
     auto samples = makeSine(440.0f, 48000, 48000, 2);
-    float before = DSP::computePeakDbFS(samples);
+    [[maybe_unused]] float before = DSP::computePeakDbFS(samples);
     DSP::normalizeToPeak(samples, -1.0f);
-    float after = DSP::computePeakDbFS(samples);
+    [[maybe_unused]] float after = DSP::computePeakDbFS(samples);
     assert(after > -1.1f && after < -0.9f);
     assert(after > before);
 }

@@ -64,5 +64,17 @@ Woosh/
   tests/
 ```
 
+## License
+
+Woosh is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
+
+This means you are free to use, modify, and distribute this software, provided that any derivative works are also licensed under GPL-3.0.
+
+See [LICENSE](LICENSE) for the full license text.
+
+## Author
+
+**Pedro G. Dias** ([@digitaldias](https://github.com/digitaldias))
+
 
 
