@@ -51,7 +51,7 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake -B build `
+          cmake -B build -Wno-dev `
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
             -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake `
             -DVCPKG_TARGET_TRIPLET=x64-windows `

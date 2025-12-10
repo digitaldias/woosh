@@ -51,6 +51,18 @@ find_package(Qt6 COMPONENTS Widgets Multimedia REQUIRED)
 find_package(SndFile CONFIG REQUIRED)
 find_package(mpg123 CONFIG REQUIRED)
 
+# mpg123 target name varies by vcpkg version
+if(TARGET MPG123::libmpg123)
+  set(MPG123_TARGET MPG123::libmpg123)
+elseif(TARGET MPG123::mpg123)
+  set(MPG123_TARGET MPG123::mpg123)
+elseif(TARGET mpg123::mpg123)
+  set(MPG123_TARGET mpg123::mpg123)
+else()
+  message(FATAL_ERROR "Could not find mpg123 target. Available targets from mpg123 package not recognized.")
+endif()
+message(STATUS "Using mpg123 target: ${MPG123_TARGET}")
+
 # ============================================================================
 # Source Files
 # ============================================================================
@@ -128,7 +140,7 @@ target_link_libraries(Woosh PRIVATE
   Qt6::Widgets 
   Qt6::Multimedia 
   SndFile::sndfile 
-  MPG123::libmpg123
+  ${MPG123_TARGET}
 )
 
 target_compile_definitions(Woosh PRIVATE 
@@ -164,7 +176,7 @@ target_include_directories(WooshTests PRIVATE
 
 target_link_libraries(WooshTests PRIVATE 
   SndFile::sndfile 
-  MPG123::libmpg123
+  ${MPG123_TARGET}
 )
 
 add_test(NAME WooshTests COMMAND WooshTests)
