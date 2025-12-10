@@ -54,6 +54,10 @@ bool AudioEngine::exportWav(const AudioClip& clip, const std::string& outFolder)
     return wavCodec_.write(outPath.string(), clip);
 }
 
+void AudioEngine::updateClipMetrics(AudioClip& clip) {
+    refreshMetrics(clip);
+}
+
 void AudioEngine::refreshMetrics(AudioClip& clip) {
     auto peak = DSP::computePeakDbFS(clip.samples());
     auto rms = DSP::computeRMSDb(clip.samples());

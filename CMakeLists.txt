@@ -29,15 +29,23 @@ set(SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 set(WOOSH_SOURCES
   ${SRC_ROOT}/main.cpp
+  # UI components
   ${SRC_ROOT}/ui/MainWindow.cpp
-  ${SRC_ROOT}/ui/BatchDialog.cpp
+  ${SRC_ROOT}/ui/ClipTableModel.cpp
+  ${SRC_ROOT}/ui/ProcessingPanel.cpp
+  ${SRC_ROOT}/ui/OutputPanel.cpp
+  ${SRC_ROOT}/ui/TransportPanel.cpp
   ${SRC_ROOT}/ui/WaveformView.cpp
+  # Audio core
   ${SRC_ROOT}/audio/AudioEngine.cpp
   ${SRC_ROOT}/audio/AudioClip.cpp
+  ${SRC_ROOT}/audio/AudioPlayer.cpp
   ${SRC_ROOT}/audio/Formats/WavCodec.cpp
   ${SRC_ROOT}/audio/Formats/Mp3Codec.cpp
+  # Utilities
   ${SRC_ROOT}/utils/FileScanner.cpp
   ${SRC_ROOT}/utils/DSP.cpp
+  # Resources
   ${SRC_ROOT}/resources/woosh.qrc
 )
 

@@ -19,6 +19,9 @@ public:
     void compress(AudioClip& clip, float thresholdDb, float ratio, float attackMs, float releaseMs, float makeupDb);
     bool exportWav(const AudioClip& clip, const std::string& outFolder);
 
+    /** @brief Recalculate peak/RMS metrics for a clip (call after manual sample edits). */
+    void updateClipMetrics(AudioClip& clip);
+
 private:
     void refreshMetrics(AudioClip& clip);
     WavCodec wavCodec_;
