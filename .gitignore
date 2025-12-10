@@ -1,0 +1,29 @@
+# Build and IDE artifacts
+/build/
+/out/
+/bin/
+/lib/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/Testing/
+/*.user
+/.vs/
+/*.vcxproj*
+/*.sln
+/compile_commands.json
+
+# Qt
+/*.qmlc
+/*.jsc
+/moc_*.cpp
+/qrc_*.cpp
+/ui_*.h
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.DS_Store
+
+
