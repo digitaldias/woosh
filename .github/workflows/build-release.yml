@@ -49,16 +49,13 @@ jobs:
           modules: 'qtmultimedia'
           cache: true
 
-      - name: Install dependencies via vcpkg
-        run: |
-          vcpkg install libsndfile:x64-windows mpg123:x64-windows
-
       - name: Configure CMake
         run: |
           cmake -B build `
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
             -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake `
-            -DVCPKG_TARGET_TRIPLET=x64-windows
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DVCPKG_MANIFEST_MODE=ON
 
       - name: Build
         run: cmake --build build --config ${{ env.BUILD_TYPE }}

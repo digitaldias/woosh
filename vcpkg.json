@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "woosh",
+  "version": "0.2.0",
+  "description": "Audio Batch Editor for Game Developers",
+  "dependencies": [
+    "libsndfile",
+    "mpg123"
+  ]
+}
+
