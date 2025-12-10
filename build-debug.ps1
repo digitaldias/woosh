@@ -1,26 +1,32 @@
-# Woosh - Debug Build Script
-# Usage: .\build-debug.ps1 [-Deploy] [-SetupVcpkg] [-Jobs <n>] [-Quiet]
+﻿# Woosh - Debug Build Script
+# Usage: .\build-debug.ps1 [-Deploy] [-SetupVcpkg] [-Jobs <n>] [-Quiet] [-Clean]
 
 param(
     [switch]$Deploy,
     [switch]$SetupVcpkg,
-    [switch]$Quiet,  # Only show warnings and errors
-    [int]$Jobs = 0   # 0 = auto-detect
+    [switch]$Quiet,
+    [switch]$Clean,
+    [int]$Jobs = 0
 )
 
 $ErrorActionPreference = "Stop"
 
 # Auto-detect CPU cores if not specified
 if ($Jobs -eq 0) {
-    $Jobs = (Get-CimInstance Win32_Processor).NumberOfLogicalProcessors
-    if (-not $Jobs) { $Jobs = $env:NUMBER_OF_PROCESSORS }
-    if (-not $Jobs) { $Jobs = 8 }  # Fallback
+    $Jobs = [Environment]::ProcessorCount
+    if (-not $Jobs) { $Jobs = 8 }
 }
 
 $startTime = Get-Date
 if (-not $Quiet) {
     Write-Host "=== Woosh Debug Build ===" -ForegroundColor Cyan
     Write-Host "Parallel jobs: $Jobs cores" -ForegroundColor Gray
+}
+
+# Clean build if requested
+if ($Clean -and (Test-Path "build")) {
+    Write-Host "Cleaning build directory..." -ForegroundColor Yellow
+    Remove-Item -Recurse -Force "build" -ErrorAction SilentlyContinue
 }
 
 # Common Qt search paths
@@ -30,7 +36,6 @@ $qtSearchPaths = @("C:\Qt", "D:\Qt", "$env:USERPROFILE\Qt")
 $vcpkgRoot = $null
 $vcpkgToolchain = $null
 
-# Check common vcpkg locations
 $vcpkgLocations = @(
     $env:VCPKG_ROOT,
     "$PSScriptRoot\vcpkg",
@@ -47,45 +52,54 @@ foreach ($loc in $vcpkgLocations) {
     }
 }
 
-# Clone and bootstrap vcpkg if not found and requested
-if (-not $vcpkgRoot) {
-    if ($SetupVcpkg) {
-        Write-Host "Setting up vcpkg in project directory..." -ForegroundColor Yellow
-        $vcpkgRoot = "$PSScriptRoot\vcpkg"
-        
-        if (-not (Test-Path $vcpkgRoot)) {
-            git clone https://github.com/microsoft/vcpkg.git $vcpkgRoot
-        }
-        
-        if (-not (Test-Path "$vcpkgRoot\vcpkg.exe")) {
-            Push-Location $vcpkgRoot
-            .\bootstrap-vcpkg.bat -disableMetrics
-            Pop-Location
-        }
-        
-        $vcpkgToolchain = "$vcpkgRoot\scripts\buildsystems\vcpkg.cmake"
-        Write-Host "vcpkg set up at: $vcpkgRoot" -ForegroundColor Green
-    } else {
-        Write-Host "Warning: vcpkg not found. Dependencies (libsndfile, mpg123) may not be available." -ForegroundColor Yellow
-        Write-Host "Run with -SetupVcpkg to automatically clone and bootstrap vcpkg." -ForegroundColor Yellow
+if (-not $vcpkgRoot -and $SetupVcpkg) {
+    Write-Host "Setting up vcpkg in project directory..." -ForegroundColor Yellow
+    $vcpkgRoot = "$PSScriptRoot\vcpkg"
+    
+    if (-not (Test-Path $vcpkgRoot)) {
+        git clone https://github.com/microsoft/vcpkg.git $vcpkgRoot
     }
+    
+    if (-not (Test-Path "$vcpkgRoot\vcpkg.exe")) {
+        Push-Location $vcpkgRoot
+        .\bootstrap-vcpkg.bat -disableMetrics
+        Pop-Location
+    }
+    
+    $vcpkgToolchain = "$vcpkgRoot\scripts\buildsystems\vcpkg.cmake"
+    Write-Host "vcpkg set up at: $vcpkgRoot" -ForegroundColor Green
 }
 
-# Find Qt installation
+if (-not $vcpkgRoot) {
+    Write-Host "Warning: vcpkg not found. Run with -SetupVcpkg to set it up." -ForegroundColor Yellow
+}
+
+# Find Qt installation (prefer MSVC over MinGW)
 $qtPath = $null
 if ($env:CMAKE_PREFIX_PATH) {
     $qtPath = $env:CMAKE_PREFIX_PATH
 } else {
     foreach ($basePath in $qtSearchPaths) {
         if (Test-Path $basePath) {
-            # Find latest Qt version with MSVC or MinGW
-            $qtVersions = Get-ChildItem $basePath -Directory | Where-Object { $_.Name -match '^\d+\.\d+' } | Sort-Object Name -Descending
+            $qtVersions = Get-ChildItem $basePath -Directory -ErrorAction SilentlyContinue | 
+                Where-Object { $_.Name -match '^\d+\.\d+' } | 
+                Sort-Object { [version]($_.Name -replace '[^\d.].*$', '') } -Descending
+            
             foreach ($ver in $qtVersions) {
-                # Prefer MSVC, fallback to MinGW
-                $compilerPath = Get-ChildItem $ver.FullName -Directory | Where-Object { $_.Name -match 'msvc\d+_64' } | Select-Object -First 1
+                # Strongly prefer MSVC 2022, then MSVC 2019, then MinGW
+                $compilerPath = Get-ChildItem $ver.FullName -Directory -ErrorAction SilentlyContinue | 
+                    Where-Object { $_.Name -match 'msvc2022_64' } | Select-Object -First 1
+                
                 if (-not $compilerPath) {
-                    $compilerPath = Get-ChildItem $ver.FullName -Directory | Where-Object { $_.Name -match 'mingw_64' } | Select-Object -First 1
+                    $compilerPath = Get-ChildItem $ver.FullName -Directory -ErrorAction SilentlyContinue | 
+                        Where-Object { $_.Name -match 'msvc\d+_64' } | Select-Object -First 1
                 }
+                
+                if (-not $compilerPath) {
+                    $compilerPath = Get-ChildItem $ver.FullName -Directory -ErrorAction SilentlyContinue | 
+                        Where-Object { $_.Name -match 'mingw' } | Select-Object -First 1
+                }
+                
                 if ($compilerPath) {
                     $qtPath = $compilerPath.FullName
                     break
@@ -96,129 +110,56 @@ if ($env:CMAKE_PREFIX_PATH) {
     }
 }
 
-# Determine if using MinGW
-$useMinGW = $qtPath -and $qtPath -match 'mingw'
-
-# Add MinGW to PATH if needed
-if ($useMinGW) {
-    foreach ($searchPath in $qtSearchPaths) {
-        if (Test-Path "$searchPath\Tools") {
-            $mingwDirs = Get-ChildItem "$searchPath\Tools" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'mingw' }
-            if ($mingwDirs) {
-                $mingwBin = Join-Path $mingwDirs[0].FullName "bin"
-                if (Test-Path $mingwBin) {
-                    if (-not $Quiet) { Write-Host "Adding MinGW to PATH: $mingwBin" -ForegroundColor Gray }
-                    $env:PATH = "$mingwBin;$env:PATH"
-                    break
-                }
-            }
-        }
-    }
+if (-not $qtPath) {
+    Write-Host "Error: Qt not found. Install Qt 6 or set CMAKE_PREFIX_PATH." -ForegroundColor Red
+    exit 1
 }
 
-# Detect if we need to reconfigure (CMakeLists.txt newer than cache)
-$needsConfigure = $false
-if (-not (Test-Path "build\CMakeCache.txt")) {
-    $needsConfigure = $true
-} else {
-    $cacheTime = (Get-Item "build\CMakeCache.txt").LastWriteTime
-    $cmakeTime = (Get-Item "CMakeLists.txt").LastWriteTime
-    if ($cmakeTime -gt $cacheTime) {
-        Write-Host "CMakeLists.txt changed, reconfiguring..." -ForegroundColor Yellow
-        Remove-Item -Recurse -Force build
-        $needsConfigure = $true
-    }
+$useMinGW = $qtPath -match 'mingw'
+if (-not $Quiet) {
+    Write-Host "Using Qt: $qtPath" -ForegroundColor Gray
 }
+
+# Configure if needed
+$needsConfigure = -not (Test-Path "build\CMakeCache.txt")
 
 if ($needsConfigure) {
     Write-Host "Configuring CMake (Debug)..." -ForegroundColor Yellow
     
-    $cmakeArgs = @("-B", "build", "-DCMAKE_BUILD_TYPE=Debug", "-Wno-dev")
+    $cmakeArgs = @("-B", "build", "-DCMAKE_BUILD_TYPE=Debug")
     
-    # Use Ninja generator for faster builds (or MinGW Makefiles as fallback)
     if ($useMinGW) {
-        if (Get-Command ninja -ErrorAction SilentlyContinue) {
-            Write-Host "Using Ninja generator (fast parallel builds)" -ForegroundColor Gray
-            $cmakeArgs += "-G"
-            $cmakeArgs += "Ninja"
-        } else {
-            Write-Host "Using MinGW Makefiles generator (install Ninja for faster builds)" -ForegroundColor Gray
-            $cmakeArgs += "-G"
-            $cmakeArgs += "MinGW Makefiles"
-        }
-        
-        # Set vcpkg triplet for MinGW
+        $cmakeArgs += @("-G", "MinGW Makefiles")
         if ($vcpkgToolchain) {
             $cmakeArgs += "-DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic"
         }
     }
     
-    if ($vcpkgToolchain -and (Test-Path $vcpkgToolchain)) {
-        Write-Host "Using vcpkg: $vcpkgRoot" -ForegroundColor Gray
+    if ($vcpkgToolchain) {
         $cmakeArgs += "-DCMAKE_TOOLCHAIN_FILE=$vcpkgToolchain"
     }
     
-    if ($qtPath) {
-        Write-Host "Using Qt: $qtPath" -ForegroundColor Gray
-        $cmakeArgs += "-DCMAKE_PREFIX_PATH=$qtPath"
-    } else {
-        Write-Host "Error: Qt not found. Install Qt or set CMAKE_PREFIX_PATH." -ForegroundColor Red
-        exit 1
-    }
+    $cmakeArgs += "-DCMAKE_PREFIX_PATH=$qtPath"
     
-    if ($Quiet) {
-        $output = cmake @cmakeArgs 2>&1
-        $exitCode = $LASTEXITCODE
-        $output | Where-Object { $_ -match 'warning|error|fatal' } | ForEach-Object {
-            if ($_ -match 'error|fatal') { Write-Host $_ -ForegroundColor Red }
-            else { Write-Host $_ -ForegroundColor Yellow }
-        }
-        if ($exitCode -ne 0) { exit $exitCode }
-    } else {
-        cmake @cmakeArgs
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    }
-}
-
-# Build with parallel jobs
-if ($Quiet) {
-    Write-Host "Building (quiet mode - warnings/errors only)..." -ForegroundColor Yellow
-    $output = cmake --build build --config Debug --parallel $Jobs 2>&1
-    $exitCode = $LASTEXITCODE
-    # Filter to only show warnings and errors
-    $output | Where-Object { $_ -match 'warning|error|failed|fatal' } | ForEach-Object {
-        if ($_ -match 'error|fatal|failed') {
-            Write-Host $_ -ForegroundColor Red
-        } else {
-            Write-Host $_ -ForegroundColor Yellow
-        }
-    }
-    if ($exitCode -ne 0) { exit $exitCode }
-} else {
-    Write-Host "Building with $Jobs parallel jobs..." -ForegroundColor Yellow
-    cmake --build build --config Debug --parallel $Jobs
+    cmake @cmakeArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
+
+# Build
+Write-Host "Building with $Jobs parallel jobs..." -ForegroundColor Yellow
+cmake --build build --config Debug --parallel $Jobs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $elapsed = (Get-Date) - $startTime
 Write-Host ""
 Write-Host "Build successful! ($('{0:mm\:ss}' -f $elapsed))" -ForegroundColor Green
 
-# Show executable path based on generator
-if ($useMinGW) {
-    Write-Host "Executable: build\Woosh.exe" -ForegroundColor Gray
-} else {
-    Write-Host "Executable: build\Debug\Woosh.exe" -ForegroundColor Gray
-}
+$exePath = if ($useMinGW) { "build\Woosh.exe" } else { "build\Debug\Woosh.exe" }
+Write-Host "Executable: $exePath" -ForegroundColor Gray
 
-# Deploy Qt dependencies if requested
 if ($Deploy) {
     Write-Host "Running windeployqt..." -ForegroundColor Yellow
-    if ($useMinGW) {
-        windeployqt --debug build\Woosh.exe
-    } else {
-        windeployqt --debug build\Debug\Woosh.exe
-    }
+    windeployqt --debug $exePath
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     Write-Host "Qt dependencies deployed!" -ForegroundColor Green
 }
