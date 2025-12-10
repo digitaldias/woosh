@@ -82,10 +82,11 @@ jobs:
           path: Woosh-*-Windows-x64.zip
 
   # ==========================================================================
-  # macOS Build (ARM64 - Apple Silicon)
+  # macOS Build (ARM64 - Apple Silicon) - DISABLED FOR NOW
   # ==========================================================================
   build-macos:
     runs-on: macos-latest
+    if: false  # TODO: Re-enable when Windows build is stable
     
     steps:
       - name: Checkout
@@ -148,10 +149,11 @@ jobs:
           path: Woosh-*-macOS-arm64.*
 
   # ==========================================================================
-  # Linux Build
+  # Linux Build - DISABLED FOR NOW
   # ==========================================================================
   build-linux:
     runs-on: ubuntu-latest
+    if: false  # TODO: Re-enable when Windows build is stable
     
     steps:
       - name: Checkout
@@ -229,7 +231,7 @@ jobs:
   # Create Release (on tag push)
   # ==========================================================================
   release:
-    needs: [build-windows, build-macos, build-linux]
+    needs: [build-windows]  # TODO: Add build-macos, build-linux when re-enabled
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     
