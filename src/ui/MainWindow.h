@@ -104,6 +104,8 @@ private:
     int currentClipIndex() const;
     void updateWaveformView();
     void updateTimeDisplay();
+    void refreshModelPreservingSelection();
+    void selectRows(const std::vector<int>& indices);
 
     // --- Data ---
     AudioEngine engine_;

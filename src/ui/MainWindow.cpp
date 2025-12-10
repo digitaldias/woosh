@@ -11,6 +11,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QItemSelection>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
@@ -604,6 +605,45 @@ void MainWindow::updateTimeDisplay() {
     transportPanel_->setTimeDisplay(currentSecs, totalSecs);
 }
 
+void MainWindow::refreshModelPreservingSelection() {
+    // Save current selection
+    auto indices = selectedIndices();
+
+    // Refresh the model (this clears selection)
+    clipModel_->refresh();
+
+    // Restore selection
+    selectRows(indices);
+}
+
+void MainWindow::selectRows(const std::vector<int>& indices) {
+    if (indices.empty()) return;
+
+    QItemSelection selection;
+    for (int srcRow : indices) {
+        QModelIndex srcIndex = clipModel_->index(srcRow, 0);
+        QModelIndex proxyIndex = proxyModel_->mapFromSource(srcIndex);
+        if (proxyIndex.isValid()) {
+            // Select entire row
+            QModelIndex firstCol = proxyModel_->index(proxyIndex.row(), 0);
+            QModelIndex lastCol = proxyModel_->index(proxyIndex.row(), clipModel_->columnCount() - 1);
+            selection.select(firstCol, lastCol);
+        }
+    }
+
+    clipTable_->selectionModel()->select(selection,
+        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+
+    // Scroll to first selected item
+    if (!indices.empty()) {
+        QModelIndex srcIndex = clipModel_->index(indices.front(), 0);
+        QModelIndex proxyIndex = proxyModel_->mapFromSource(srcIndex);
+        if (proxyIndex.isValid()) {
+            clipTable_->scrollTo(proxyIndex);
+        }
+    }
+}
+
 // ============================================================================
 // Playback
 // ============================================================================
@@ -684,7 +724,7 @@ void MainWindow::onApplyTrim() {
     waveformView_->setClip(clip);
     audioPlayer_->setClip(clip);
     audioPlayer_->setPlaybackRegion(0, 0);
-    clipModel_->refresh();
+    refreshModelPreservingSelection();
 
     undoAction_->setEnabled(clip->hasOriginal());
     statusBar()->showMessage(tr("Applied trim to %1").arg(QString::fromStdString(clip->displayName())));
@@ -702,8 +742,7 @@ void MainWindow::onUndoProcessing() {
 
     waveformView_->setClip(clip);
     audioPlayer_->setClip(clip);
-    clipModel_->refresh();
-    onSelectionChanged();
+    refreshModelPreservingSelection();
 
     undoAction_->setEnabled(false);
     statusBar()->showMessage(tr("Restored original for %1").arg(QString::fromStdString(clip->displayName())));
@@ -763,7 +802,7 @@ void MainWindow::applyProcessing(const std::vector<int>& indices, bool normalize
     }
 
     progressBar_->setVisible(false);
-    clipModel_->refresh();
+    refreshModelPreservingSelection();
 
     int currentIdx = currentClipIndex();
     if (currentIdx >= 0 && std::find(indices.begin(), indices.end(), currentIdx) != indices.end()) {
