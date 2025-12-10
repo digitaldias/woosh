@@ -37,7 +37,7 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: '01f602195983451bc83e72f4214af2cbc495aa94'
+          vcpkgGitCommitId: 'c82f74667287d3dc386bce81e44964370c91a289'
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -101,7 +101,7 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: '01f602195983451bc83e72f4214af2cbc495aa94'
+          vcpkgGitCommitId: 'c82f74667287d3dc386bce81e44964370c91a289'
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -180,7 +180,7 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: '01f602195983451bc83e72f4214af2cbc495aa94'
+          vcpkgGitCommitId: 'c82f74667287d3dc386bce81e44964370c91a289'
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
