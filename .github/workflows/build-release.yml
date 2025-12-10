@@ -1,4 +1,4 @@
-# Woosh - Multi-Platform Build & Release Workflow
+﻿# Woosh - Multi-Platform Build & Release Workflow
 # Builds for Windows, macOS, and Linux
 # Creates installers and publishes to GitHub Releases on tags
 
@@ -37,40 +37,37 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: 'c82f74667287d3dc386bce81e44964370c91a289'
+          vcpkgGitCommitId: '37302273f63394714ba7e480a2785f7a5ba450d0'
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.6.*'
+          version: '6.7.*'
           host: 'windows'
           target: 'desktop'
-          arch: 'win64_msvc2019_64'
+          arch: 'win64_msvc2022_64'
           modules: 'qtmultimedia'
           cache: true
 
       - name: Configure CMake
         run: |
-          cmake -B build -Wno-dev `
+          cmake -B build `
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
-            -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake `
-            -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DVCPKG_MANIFEST_MODE=ON
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows
 
       - name: Build
-        run: cmake --build build --config ${{ env.BUILD_TYPE }}
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
 
       - name: Run Tests
         working-directory: build
         run: ctest -C ${{ env.BUILD_TYPE }} --output-on-failure
 
-      - name: Deploy Qt dependencies
+      - name: Prepare release package
         run: |
-          windeployqt --release --no-translations build/Release/Woosh.exe
-
-      - name: Create ZIP package
-        run: |
-          Compress-Archive -Path build/Release/* -DestinationPath Woosh-${{ github.ref_name }}-Windows-x64.zip
+          # windeployqt is already run by CMake POST_BUILD, just package the result
+          $version = if ("${{ github.ref_name }}" -match "^v") { "${{ github.ref_name }}" } else { "dev" }
+          Compress-Archive -Path build/Release/* -DestinationPath "Woosh-${version}-Windows-x64.zip"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4

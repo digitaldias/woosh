@@ -1,14 +1,27 @@
 # Woosh - Debug Build Script
-# Usage: .\build-debug.ps1 [-Deploy] [-SetupVcpkg]
+# Usage: .\build-debug.ps1 [-Deploy] [-SetupVcpkg] [-Jobs <n>] [-Quiet]
 
 param(
     [switch]$Deploy,
-    [switch]$SetupVcpkg
+    [switch]$SetupVcpkg,
+    [switch]$Quiet,  # Only show warnings and errors
+    [int]$Jobs = 0   # 0 = auto-detect
 )
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=== Woosh Debug Build ===" -ForegroundColor Cyan
+# Auto-detect CPU cores if not specified
+if ($Jobs -eq 0) {
+    $Jobs = (Get-CimInstance Win32_Processor).NumberOfLogicalProcessors
+    if (-not $Jobs) { $Jobs = $env:NUMBER_OF_PROCESSORS }
+    if (-not $Jobs) { $Jobs = 8 }  # Fallback
+}
+
+$startTime = Get-Date
+if (-not $Quiet) {
+    Write-Host "=== Woosh Debug Build ===" -ForegroundColor Cyan
+    Write-Host "Parallel jobs: $Jobs cores" -ForegroundColor Gray
+}
 
 # Common Qt search paths
 $qtSearchPaths = @("C:\Qt", "D:\Qt", "$env:USERPROFILE\Qt")
@@ -94,7 +107,7 @@ if ($useMinGW) {
             if ($mingwDirs) {
                 $mingwBin = Join-Path $mingwDirs[0].FullName "bin"
                 if (Test-Path $mingwBin) {
-                    Write-Host "Adding MinGW to PATH: $mingwBin" -ForegroundColor Gray
+                    if (-not $Quiet) { Write-Host "Adding MinGW to PATH: $mingwBin" -ForegroundColor Gray }
                     $env:PATH = "$mingwBin;$env:PATH"
                     break
                 }
@@ -122,13 +135,19 @@ if ($needsConfigure) {
     
     $cmakeArgs = @("-B", "build", "-DCMAKE_BUILD_TYPE=Debug", "-Wno-dev")
     
-    # Use MinGW generator if Qt is MinGW
+    # Use Ninja generator for faster builds (or MinGW Makefiles as fallback)
     if ($useMinGW) {
-        Write-Host "Using MinGW Makefiles generator" -ForegroundColor Gray
-        $cmakeArgs += "-G"
-        $cmakeArgs += "MinGW Makefiles"
+        if (Get-Command ninja -ErrorAction SilentlyContinue) {
+            Write-Host "Using Ninja generator (fast parallel builds)" -ForegroundColor Gray
+            $cmakeArgs += "-G"
+            $cmakeArgs += "Ninja"
+        } else {
+            Write-Host "Using MinGW Makefiles generator (install Ninja for faster builds)" -ForegroundColor Gray
+            $cmakeArgs += "-G"
+            $cmakeArgs += "MinGW Makefiles"
+        }
         
-        # Also set vcpkg triplet for MinGW
+        # Set vcpkg triplet for MinGW
         if ($vcpkgToolchain) {
             $cmakeArgs += "-DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic"
         }
@@ -147,17 +166,43 @@ if ($needsConfigure) {
         exit 1
     }
     
-    cmake @cmakeArgs
+    if ($Quiet) {
+        $output = cmake @cmakeArgs 2>&1
+        $exitCode = $LASTEXITCODE
+        $output | Where-Object { $_ -match 'warning|error|fatal' } | ForEach-Object {
+            if ($_ -match 'error|fatal') { Write-Host $_ -ForegroundColor Red }
+            else { Write-Host $_ -ForegroundColor Yellow }
+        }
+        if ($exitCode -ne 0) { exit $exitCode }
+    } else {
+        cmake @cmakeArgs
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+}
+
+# Build with parallel jobs
+if ($Quiet) {
+    Write-Host "Building (quiet mode - warnings/errors only)..." -ForegroundColor Yellow
+    $output = cmake --build build --config Debug --parallel $Jobs 2>&1
+    $exitCode = $LASTEXITCODE
+    # Filter to only show warnings and errors
+    $output | Where-Object { $_ -match 'warning|error|failed|fatal' } | ForEach-Object {
+        if ($_ -match 'error|fatal|failed') {
+            Write-Host $_ -ForegroundColor Red
+        } else {
+            Write-Host $_ -ForegroundColor Yellow
+        }
+    }
+    if ($exitCode -ne 0) { exit $exitCode }
+} else {
+    Write-Host "Building with $Jobs parallel jobs..." -ForegroundColor Yellow
+    cmake --build build --config Debug --parallel $Jobs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-# Build
-Write-Host "Building..." -ForegroundColor Yellow
-cmake --build build --config Debug
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
+$elapsed = (Get-Date) - $startTime
 Write-Host ""
-Write-Host "Build successful!" -ForegroundColor Green
+Write-Host "Build successful! ($('{0:mm\:ss}' -f $elapsed))" -ForegroundColor Green
 
 # Show executable path based on generator
 if ($useMinGW) {

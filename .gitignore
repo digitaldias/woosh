@@ -1,4 +1,4 @@
-# Build and IDE artifacts
+﻿# Build and IDE artifacts
 /build/
 /out/
 /bin/
@@ -9,9 +9,20 @@
 /Testing/
 /*.user
 /.vs/
+/.qt/
 /*.vcxproj*
 /*.sln
 /compile_commands.json
+/CMakePresets.json
+/*.dir/
+/x64/
+/vcpkg_installed/
+
+# Generated files
+*.rc
+!src/media/*.rc.in
+Woosh_icon.ico
+!src/media/Woosh_icon.ico
 
 # Qt
 /*.qmlc

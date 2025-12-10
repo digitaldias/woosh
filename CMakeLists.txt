@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+﻿cmake_minimum_required(VERSION 3.21)
 project(Woosh VERSION 0.2.0 LANGUAGES CXX)
 
 # ============================================================================
@@ -38,10 +38,41 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 if(MSVC)
+  # Use all available CPU cores for compilation
+  add_compile_options(/MP)
+  
+  # Common flags
   add_compile_options(/permissive- /W4 /EHsc /Zc:__cplusplus)
-  add_link_options(/INCREMENTAL)
+  
+  # Configuration-specific optimizations
+  # Debug: Keep incremental linking for fast iteration
+  add_link_options($<$<CONFIG:Debug>:/INCREMENTAL>)
+  
+  # Release: Maximum speed optimizations for audio processing
+  add_compile_options($<$<CONFIG:Release>:/O2>)           # Maximum speed optimization
+  add_compile_options($<$<CONFIG:Release>:/Oi>)           # Enable intrinsic functions
+  add_compile_options($<$<CONFIG:Release>:/Ot>)           # Favor fast code
+  add_compile_options($<$<CONFIG:Release>:/GL>)           # Whole program optimization
+  add_compile_options($<$<CONFIG:Release>:/fp:fast>)      # Fast floating-point (great for audio DSP)
+  add_compile_options($<$<CONFIG:Release>:/arch:AVX2>)    # Enable AVX2 SIMD instructions
+  add_link_options($<$<CONFIG:Release>:/LTCG>)            # Link-time code generation
+  add_link_options($<$<CONFIG:Release>:/OPT:REF>)         # Remove unreferenced code
+  add_link_options($<$<CONFIG:Release>:/OPT:ICF>)         # Identical COMDAT folding
+  
+  # RelWithDebInfo: Speed with debug symbols
+  add_compile_options($<$<CONFIG:RelWithDebInfo>:/O2>)
+  add_compile_options($<$<CONFIG:RelWithDebInfo>:/Oi>)
+  add_compile_options($<$<CONFIG:RelWithDebInfo>:/fp:fast>)
+  
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   add_compile_options(-Wall -Wextra -Wpedantic)
+  
+  # Release optimizations for Clang/GCC
+  add_compile_options($<$<CONFIG:Release>:-O3>)
+  add_compile_options($<$<CONFIG:Release>:-ffast-math>)
+  add_compile_options($<$<CONFIG:Release>:-march=native>)
+  add_compile_options($<$<CONFIG:Release>:-flto>)
+  add_link_options($<$<CONFIG:Release>:-flto>)
 endif()
 
 # ============================================================================
@@ -154,6 +185,32 @@ set_target_properties(Woosh PROPERTIES
   VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   OUTPUT_NAME "Woosh"
 )
+
+# ============================================================================
+# Deploy Qt DLLs (Windows)
+# ============================================================================
+if(WIN32)
+  # Find windeployqt executable
+  get_target_property(_qt6_qmake_location Qt6::qmake IMPORTED_LOCATION)
+  get_filename_component(_qt6_bin_dir "${_qt6_qmake_location}" DIRECTORY)
+  find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${_qt6_bin_dir}" NO_CMAKE_FIND_ROOT_PATH)
+  
+  if(WINDEPLOYQT_EXECUTABLE)
+    # Use Qt's deployment tool to copy required DLLs after build
+    add_custom_command(TARGET Woosh POST_BUILD
+      COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+              $<$<CONFIG:Debug>:--debug>
+              $<$<CONFIG:Release>:--release>
+              --no-translations
+              --no-system-d3d-compiler
+              --no-opengl-sw
+              "$<TARGET_FILE:Woosh>"
+      COMMENT "Deploying Qt runtime dependencies..."
+    )
+  else()
+    message(WARNING "windeployqt not found - Qt DLLs will not be automatically deployed")
+  endif()
+endif()
 
 # ============================================================================
 # Tests

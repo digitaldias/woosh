@@ -3,9 +3,13 @@
   "name": "woosh",
   "version": "0.2.0",
   "description": "Audio Batch Editor for Game Developers",
+  "builtin-baseline": "37302273f63394714ba7e480a2785f7a5ba450d0",
   "dependencies": [
     "libsndfile",
-    "mpg123"
+    {
+      "name": "mpg123",
+      "default-features": false
+    }
   ]
 }
 
