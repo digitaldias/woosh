@@ -219,8 +219,8 @@ endif()
 # ============================================================================
 enable_testing()
 
-add_executable(WooshTests 
-  ${SRC_ROOT}/tests/AudioEngineTests.cpp
+# Common test sources (shared dependencies)
+set(TEST_COMMON_SOURCES
   ${SRC_ROOT}/audio/AudioEngine.cpp
   ${SRC_ROOT}/audio/AudioClip.cpp
   ${SRC_ROOT}/audio/Formats/WavCodec.cpp
@@ -228,17 +228,47 @@ add_executable(WooshTests
   ${SRC_ROOT}/utils/DSP.cpp
 )
 
-target_include_directories(WooshTests PRIVATE 
+# --- AudioEngine Tests ---
+add_executable(AudioEngineTests 
+  ${SRC_ROOT}/tests/AudioEngineTests.cpp
+  ${TEST_COMMON_SOURCES}
+)
+target_include_directories(AudioEngineTests PRIVATE 
   ${SRC_ROOT}
   ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
-
-target_link_libraries(WooshTests PRIVATE 
+target_link_libraries(AudioEngineTests PRIVATE 
   SndFile::sndfile 
   ${MPG123_TARGET}
 )
+add_test(NAME AudioEngineTests COMMAND AudioEngineTests)
 
-add_test(NAME WooshTests COMMAND WooshTests)
+# --- DSP Tests ---
+add_executable(DSPTests 
+  ${SRC_ROOT}/tests/DSPTests.cpp
+  ${SRC_ROOT}/utils/DSP.cpp
+)
+target_include_directories(DSPTests PRIVATE 
+  ${SRC_ROOT}
+  ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+target_link_libraries(DSPTests PRIVATE)
+add_test(NAME DSPTests COMMAND DSPTests)
+
+# --- AudioClip Tests ---
+add_executable(AudioClipTests 
+  ${SRC_ROOT}/tests/AudioClipTests.cpp
+  ${SRC_ROOT}/audio/AudioClip.cpp
+)
+target_include_directories(AudioClipTests PRIVATE 
+  ${SRC_ROOT}
+  ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+target_link_libraries(AudioClipTests PRIVATE)
+add_test(NAME AudioClipTests COMMAND AudioClipTests)
+
+# Aggregate target to build all tests
+add_custom_target(WooshTests DEPENDS AudioEngineTests DSPTests AudioClipTests)
 
 # ============================================================================
 # Installation
