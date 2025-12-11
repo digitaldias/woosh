@@ -12,12 +12,12 @@ class AudioEngine {
 public:
     AudioEngine() = default;
 
-    std::optional<AudioClip> loadClip(const std::string& path);
+    [[nodiscard]] std::optional<AudioClip> loadClip(const std::string& path);
     void trim(AudioClip& clip, float startSec, float endSec);
     void normalizeToPeak(AudioClip& clip, float targetDbFS);
     void normalizeToRms(AudioClip& clip, float targetDb);
     void compress(AudioClip& clip, float thresholdDb, float ratio, float attackMs, float releaseMs, float makeupDb);
-    bool exportWav(const AudioClip& clip, const std::string& outFolder);
+    [[nodiscard]] bool exportWav(const AudioClip& clip, const std::string& outFolder);
 
     /** @brief Recalculate peak/RMS metrics for a clip (call after manual sample edits). */
     void updateClipMetrics(AudioClip& clip);

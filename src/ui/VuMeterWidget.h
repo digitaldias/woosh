@@ -5,7 +5,7 @@
 
 class QTimer;
 
-class VuMeterWidget : public QFrame {
+class VuMeterWidget final : public QFrame {
     Q_OBJECT
 
 public:

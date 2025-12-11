@@ -3,9 +3,9 @@
 #include <string>
 #include <vector>
 
-class FileScanner {
+class FileScanner final {
 public:
-    std::vector<std::string> scan(const std::string& folder) const;
+    [[nodiscard]] std::vector<std::string> scan(const std::string& folder) const;
 };
 
 

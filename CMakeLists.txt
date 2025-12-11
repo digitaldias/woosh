@@ -78,7 +78,7 @@ endif()
 # ============================================================================
 # Dependencies
 # ============================================================================
-find_package(Qt6 COMPONENTS Widgets Multimedia REQUIRED)
+find_package(Qt6 COMPONENTS Widgets Multimedia Concurrent REQUIRED)
 find_package(SndFile CONFIG REQUIRED)
 find_package(mpg123 CONFIG REQUIRED)
 
@@ -171,6 +171,7 @@ target_include_directories(Woosh PRIVATE
 target_link_libraries(Woosh PRIVATE 
   Qt6::Widgets 
   Qt6::Multimedia 
+  Qt6::Concurrent
   SndFile::sndfile 
   ${MPG123_TARGET}
 )

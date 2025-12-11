@@ -28,6 +28,8 @@
 #include <QTableView>
 #include <QVBoxLayout>
 
+#include <QtConcurrent>
+
 #include "audio/AudioPlayer.h"
 #include "ui/ClipTableModel.h"
 #include "ui/OutputPanel.h"
@@ -503,32 +505,59 @@ void MainWindow::openFolder() {
 }
 
 void MainWindow::loadFileList(const QStringList& paths) {
-    int loaded = 0;
-    int failed = 0;
-
-    progressBar_->setMaximum(paths.size());
-    progressBar_->setValue(0);
-    progressBar_->setVisible(true);
-
-    for (const auto& path : paths) {
-        auto clipOpt = engine_.loadClip(path.toStdString());
-        if (clipOpt) {
-            clipOpt->saveOriginal();
-            clips_.push_back(std::move(*clipOpt));
-            ++loaded;
-        } else {
-            ++failed;
-        }
-        progressBar_->setValue(progressBar_->value() + 1);
+    // Prevent starting a new load while one is in progress
+    if (loadWatcher_ && loadWatcher_->isRunning()) {
+        QMessageBox::warning(this, tr("Busy"), tr("A loading operation is already in progress."));
+        return;
     }
 
+    progressBar_->setMaximum(0);  // Indeterminate progress
+    progressBar_->setVisible(true);
+    statusBar()->showMessage(tr("Loading %1 file(s)...").arg(paths.size()));
+
+    // Capture engine pointer for the lambda (engine_ lifetime is tied to MainWindow)
+    AudioEngine* engine = &engine_;
+
+    // Create watcher if needed
+    if (!loadWatcher_) {
+        loadWatcher_ = new QFutureWatcher<std::vector<AudioClip>>(this);
+        connect(loadWatcher_, &QFutureWatcher<std::vector<AudioClip>>::finished,
+                this, &MainWindow::onLoadingFinished);
+    }
+
+    // Run loading in background thread
+    QFuture<std::vector<AudioClip>> future = QtConcurrent::run([engine, paths]() {
+        std::vector<AudioClip> loadedClips;
+        loadedClips.reserve(static_cast<size_t>(paths.size()));
+
+        for (const auto& path : paths) {
+            auto clipOpt = engine->loadClip(path.toStdString());
+            if (clipOpt) {
+                clipOpt->saveOriginal();
+                loadedClips.push_back(std::move(*clipOpt));
+            }
+        }
+        return loadedClips;
+    });
+
+    loadWatcher_->setFuture(future);
+}
+
+void MainWindow::onLoadingFinished() {
     progressBar_->setVisible(false);
+
+    if (!loadWatcher_) return;
+
+    std::vector<AudioClip> loadedClips = loadWatcher_->result();
+    int loaded = static_cast<int>(loadedClips.size());
+
+    for (auto& clip : loadedClips) {
+        clips_.push_back(std::move(clip));
+    }
+
     clipModel_->refresh();
 
     QString msg = tr("Loaded %1 clip(s)").arg(loaded);
-    if (failed > 0) {
-        msg += tr(", %1 failed").arg(failed);
-    }
     statusBar()->showMessage(msg);
 }
 
@@ -870,28 +899,69 @@ void MainWindow::exportClips(const std::vector<int>& indices) {
         return;
     }
 
-    std::string destFolder = overwrite ? "" : outputDir.toStdString();
+    // Prevent starting a new export while one is in progress
+    if (exportWatcher_ && exportWatcher_->isRunning()) {
+        QMessageBox::warning(this, tr("Busy"), tr("An export operation is already in progress."));
+        return;
+    }
 
-    progressBar_->setMaximum(static_cast<int>(indices.size()));
-    progressBar_->setValue(0);
+    progressBar_->setMaximum(0);  // Indeterminate progress
     progressBar_->setVisible(true);
+    statusBar()->showMessage(tr("Exporting %1 file(s)...").arg(indices.size()));
 
-    int exported = 0;
+    // Collect clips and destination info for background thread
+    struct ExportItem {
+        AudioClip clip;  // Copy of clip data
+        std::string destFolder;
+    };
+    std::vector<ExportItem> items;
+    items.reserve(indices.size());
+
     for (int idx : indices) {
         if (idx < 0 || idx >= static_cast<int>(clips_.size())) continue;
 
-        auto& clip = clips_[static_cast<size_t>(idx)];
+        const auto& clip = clips_[static_cast<size_t>(idx)];
+        std::string destFolder;
 
         if (overwrite) {
             QFileInfo fi(QString::fromStdString(clip.filePath()));
             destFolder = fi.absolutePath().toStdString();
+        } else {
+            destFolder = outputDir.toStdString();
         }
 
-        engine_.exportWav(clip, destFolder);
-        ++exported;
-        progressBar_->setValue(exported);
+        items.push_back({clip, destFolder});
     }
 
+    // Create watcher if needed
+    if (!exportWatcher_) {
+        exportWatcher_ = new QFutureWatcher<int>(this);
+        connect(exportWatcher_, &QFutureWatcher<int>::finished,
+                this, &MainWindow::onExportFinished);
+    }
+
+    // Capture engine pointer for the lambda
+    AudioEngine* engine = &engine_;
+
+    // Run export in background thread
+    QFuture<int> future = QtConcurrent::run([engine, items = std::move(items)]() {
+        int exported = 0;
+        for (const auto& item : items) {
+            if (engine->exportWav(item.clip, item.destFolder)) {
+                ++exported;
+            }
+        }
+        return exported;
+    });
+
+    exportWatcher_->setFuture(future);
+}
+
+void MainWindow::onExportFinished() {
     progressBar_->setVisible(false);
+
+    if (!exportWatcher_) return;
+
+    int exported = exportWatcher_->result();
     statusBar()->showMessage(tr("Exported %1 clip(s)").arg(exported));
 }

@@ -20,7 +20,7 @@ class QPushButton;
  * Emits signals when the user clicks "Apply to Selected" or "Apply to All".
  * The parent (MainWindow) connects these signals to perform the actual processing.
  */
-class ProcessingPanel : public QGroupBox {
+class ProcessingPanel final : public QGroupBox {
     Q_OBJECT
 
 public:
@@ -33,22 +33,22 @@ public:
     // --- Accessors for current parameter values ---
 
     /** @brief Get the normalize target in dBFS. */
-    double normalizeTarget() const;
+    [[nodiscard]] double normalizeTarget() const;
 
     /** @brief Get the compressor threshold in dB. */
-    float compThreshold() const;
+    [[nodiscard]] float compThreshold() const;
 
     /** @brief Get the compressor ratio (e.g., 4.0 means 4:1). */
-    float compRatio() const;
+    [[nodiscard]] float compRatio() const;
 
     /** @brief Get the compressor attack time in milliseconds. */
-    float compAttackMs() const;
+    [[nodiscard]] float compAttackMs() const;
 
     /** @brief Get the compressor release time in milliseconds. */
-    float compReleaseMs() const;
+    [[nodiscard]] float compReleaseMs() const;
 
     /** @brief Get the compressor makeup gain in dB. */
-    float compMakeupDb() const;
+    [[nodiscard]] float compMakeupDb() const;
 
 Q_SIGNALS:
     /**

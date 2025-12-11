@@ -11,6 +11,7 @@
 #include <QMainWindow>
 #include <QString>
 #include <QStringList>
+#include <QFutureWatcher>
 #include <memory>
 #include <vector>
 
@@ -83,6 +84,10 @@ private Q_SLOTS:
     // Settings
     void onClearHistory();
 
+    // Async loading/export completion
+    void onLoadingFinished();
+    void onExportFinished();
+
 private:
     void setupUi();
     void setupMenus();
@@ -99,10 +104,10 @@ private:
     void loadFileList(const QStringList& paths);
     void applyProcessing(const std::vector<int>& indices, bool normalize, bool compress);
     void exportClips(const std::vector<int>& indices);
-    std::vector<int> selectedIndices() const;
-    std::vector<int> allIndices() const;
-    AudioClip* currentClip();
-    int currentClipIndex() const;
+    [[nodiscard]] std::vector<int> selectedIndices() const;
+    [[nodiscard]] std::vector<int> allIndices() const;
+    [[nodiscard]] AudioClip* currentClip();
+    [[nodiscard]] int currentClipIndex() const;
     void updateWaveformView();
     void updateTimeDisplay();
     void refreshModelPreservingSelection();
@@ -111,6 +116,10 @@ private:
     // --- Data ---
     AudioEngine engine_;
     std::vector<AudioClip> clips_;
+
+    // --- Async operations ---
+    QFutureWatcher<std::vector<AudioClip>>* loadWatcher_ = nullptr;
+    QFutureWatcher<int>* exportWatcher_ = nullptr;
 
     // --- Settings ---
     QString lastOpenDirectory_;

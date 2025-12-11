@@ -4,10 +4,10 @@
 #include <string>
 #include "audio/AudioClip.h"
 
-class WavCodec {
+class WavCodec final {
 public:
-    std::optional<AudioClip> read(const std::string& path);
-    bool write(const std::string& path, const AudioClip& clip);
+    [[nodiscard]] std::optional<AudioClip> read(const std::string& path);
+    [[nodiscard]] bool write(const std::string& path, const AudioClip& clip);
 };
 
 

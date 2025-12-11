@@ -22,7 +22,7 @@ class QCheckBox;
  * Emits signals when the user clicks "Export Selected" or "Export All".
  * The parent (MainWindow) handles the actual export logic.
  */
-class OutputPanel : public QGroupBox {
+class OutputPanel final : public QGroupBox {
     Q_OBJECT
 
 public:
@@ -36,7 +36,7 @@ public:
      * @brief Get the currently selected output folder path.
      * @return The output folder path, or empty string if not set.
      */
-    QString outputFolder() const;
+    [[nodiscard]] QString outputFolder() const;
 
     /**
      * @brief Set the output folder path.
@@ -48,7 +48,7 @@ public:
      * @brief Check if "overwrite originals" is enabled.
      * @return True if overwrite is checked, false otherwise.
      */
-    bool overwriteOriginals() const;
+    [[nodiscard]] bool overwriteOriginals() const;
 
 Q_SIGNALS:
     /**

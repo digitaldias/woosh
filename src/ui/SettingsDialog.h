@@ -18,13 +18,13 @@ class QPushButton;
  *  - Show/hide column tooltips
  *  - Clear recent folders/files history
  */
-class SettingsDialog : public QDialog {
+class SettingsDialog final : public QDialog {
     Q_OBJECT
 
 public:
     explicit SettingsDialog(QWidget* parent = nullptr);
 
-    bool showColumnTooltips() const;
+    [[nodiscard]] bool showColumnTooltips() const;
     void setShowColumnTooltips(bool show);
 
 Q_SIGNALS:

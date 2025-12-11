@@ -19,12 +19,12 @@ class QLabel;
  * Layout:
  *  [Play/Pause] [Stop] | [Zoom-] [Zoom+] [Fit] | Time: 0:00 / 0:00 | [Apply Trim]
  */
-class TransportPanel : public QWidget {
+class TransportPanel final : public QWidget {
     Q_OBJECT
 
 public:
     explicit TransportPanel(QWidget* parent = nullptr);
-    ~TransportPanel() override = default;
+    ~TransportPanel() = default;
 
     /**
      * @brief Update the play/pause button state.
