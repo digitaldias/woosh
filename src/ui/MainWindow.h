@@ -87,6 +87,7 @@ private Q_SLOTS:
     // Async loading/export completion
     void onLoadingFinished();
     void onExportFinished();
+    void onProcessingFinished();
 
 private:
     void setupUi();
@@ -120,6 +121,8 @@ private:
     // --- Async operations ---
     QFutureWatcher<std::vector<AudioClip>>* loadWatcher_ = nullptr;
     QFutureWatcher<int>* exportWatcher_ = nullptr;
+    QFutureWatcher<std::vector<AudioClip>>* processWatcher_ = nullptr;
+    std::vector<int> processingIndices_;  // Tracks which indices were processed
 
     // --- Settings ---
     QString lastOpenDirectory_;

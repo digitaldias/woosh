@@ -14,6 +14,8 @@
 #include <QtMath>
 #include <algorithm>
 #include <cmath>
+#include <execution>
+#include <numeric>
 
 // ============================================================================
 // Construction
@@ -230,27 +232,62 @@ void WaveformView::computeWaveformCache() {
         channelCache_[ch].resize(widgetWidth);
     }
 
-    for (int x = 0; x < widgetWidth; ++x) {
-        int startFrame = scrollOffsetFrames_ + static_cast<int>(x * samplesPerPixel_);
-        int endFrame = scrollOffsetFrames_ + static_cast<int>((x + 1) * samplesPerPixel_);
+    // Threshold for parallel execution (overhead not worth it for small displays)
+    constexpr int kParallelThreshold = 200;
 
-        startFrame = std::clamp(startFrame, 0, static_cast<int>(frameCount) - 1);
-        endFrame = std::clamp(endFrame, startFrame + 1, static_cast<int>(frameCount));
+    if (widgetWidth >= kParallelThreshold) {
+        // Parallel waveform computation - each column is independent
+        std::vector<int> columnIndices(widgetWidth);
+        std::iota(columnIndices.begin(), columnIndices.end(), 0);
 
-        for (int ch = 0; ch < channels; ++ch) {
-            float minVal = 0.0f;
-            float maxVal = 0.0f;
+        std::for_each(std::execution::par_unseq, columnIndices.begin(), columnIndices.end(),
+            [this, &samples, channels, frameCount, widgetWidth](int x) {
+                int startFrame = scrollOffsetFrames_ + static_cast<int>(x * samplesPerPixel_);
+                int endFrame = scrollOffsetFrames_ + static_cast<int>((x + 1) * samplesPerPixel_);
 
-            for (int f = startFrame; f < endFrame; ++f) {
-                size_t idx = static_cast<size_t>(f * channels + ch);
-                if (idx < samples.size()) {
-                    float val = samples[idx];
-                    minVal = std::min(minVal, val);
-                    maxVal = std::max(maxVal, val);
+                startFrame = std::clamp(startFrame, 0, static_cast<int>(frameCount) - 1);
+                endFrame = std::clamp(endFrame, startFrame + 1, static_cast<int>(frameCount));
+
+                for (int ch = 0; ch < channels; ++ch) {
+                    float minVal = 0.0f;
+                    float maxVal = 0.0f;
+
+                    for (int f = startFrame; f < endFrame; ++f) {
+                        size_t idx = static_cast<size_t>(f * channels + ch);
+                        if (idx < samples.size()) {
+                            float val = samples[idx];
+                            minVal = std::min(minVal, val);
+                            maxVal = std::max(maxVal, val);
+                        }
+                    }
+
+                    channelCache_[ch][x] = {minVal, maxVal};
                 }
-            }
+            });
+    } else {
+        // Sequential for small widths (parallel overhead not worth it)
+        for (int x = 0; x < widgetWidth; ++x) {
+            int startFrame = scrollOffsetFrames_ + static_cast<int>(x * samplesPerPixel_);
+            int endFrame = scrollOffsetFrames_ + static_cast<int>((x + 1) * samplesPerPixel_);
 
-            channelCache_[ch][x] = {minVal, maxVal};
+            startFrame = std::clamp(startFrame, 0, static_cast<int>(frameCount) - 1);
+            endFrame = std::clamp(endFrame, startFrame + 1, static_cast<int>(frameCount));
+
+            for (int ch = 0; ch < channels; ++ch) {
+                float minVal = 0.0f;
+                float maxVal = 0.0f;
+
+                for (int f = startFrame; f < endFrame; ++f) {
+                    size_t idx = static_cast<size_t>(f * channels + ch);
+                    if (idx < samples.size()) {
+                        float val = samples[idx];
+                        minVal = std::min(minVal, val);
+                        maxVal = std::max(maxVal, val);
+                    }
+                }
+
+                channelCache_[ch][x] = {minVal, maxVal};
+            }
         }
     }
 

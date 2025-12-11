@@ -1,23 +1,53 @@
 #include "DSP.h"
 #include <algorithm>
 #include <cmath>
+#include <execution>
+#include <numeric>
 
 namespace {
 constexpr float kEpsilon = 1e-9f;
 inline float dbToLinear(float db) { return std::pow(10.0f, db / 20.0f); }
 inline float linearToDb(float lin) { return 20.0f * std::log10(std::max(lin, kEpsilon)); }
+
+// Threshold for using parallel execution (below this, overhead outweighs benefit)
+constexpr size_t kParallelThreshold = 10000;
 }
 
 float DSP::computePeakDbFS(const std::vector<float>& samples) {
+    if (samples.empty()) return -std::numeric_limits<float>::infinity();
+    
     float peak = 0.0f;
-    for (float s : samples) peak = std::max(peak, std::abs(s));
+    if (samples.size() >= kParallelThreshold) {
+        // Parallel reduction for large buffers
+        peak = std::transform_reduce(
+            std::execution::par_unseq,
+            samples.begin(), samples.end(),
+            0.0f,
+            [](float a, float b) { return std::max(a, b); },
+            [](float s) { return std::abs(s); }
+        );
+    } else {
+        for (float s : samples) peak = std::max(peak, std::abs(s));
+    }
     return linearToDb(peak);
 }
 
 float DSP::computeRMSDb(const std::vector<float>& samples) {
     if (samples.empty()) return -std::numeric_limits<float>::infinity();
+    
     double sumSq = 0.0;
-    for (float s : samples) sumSq += static_cast<double>(s) * s;
+    if (samples.size() >= kParallelThreshold) {
+        // Parallel reduction for large buffers
+        sumSq = std::transform_reduce(
+            std::execution::par_unseq,
+            samples.begin(), samples.end(),
+            0.0,
+            std::plus<double>{},
+            [](float s) { return static_cast<double>(s) * s; }
+        );
+    } else {
+        for (float s : samples) sumSq += static_cast<double>(s) * s;
+    }
     double rms = std::sqrt(sumSq / samples.size());
     return static_cast<float>(linearToDb(static_cast<float>(rms)));
 }
@@ -26,14 +56,28 @@ void DSP::normalizeToPeak(std::vector<float>& samples, float targetDbFS) {
     const float currentPeakDb = computePeakDbFS(samples);
     float gainDb = targetDbFS - currentPeakDb;
     float gain = dbToLinear(gainDb);
-    for (float& s : samples) s *= gain;
+    
+    if (samples.size() >= kParallelThreshold) {
+        // Parallel gain application for large buffers
+        std::for_each(std::execution::par_unseq, samples.begin(), samples.end(),
+            [gain](float& s) { s *= gain; });
+    } else {
+        for (float& s : samples) s *= gain;
+    }
 }
 
 void DSP::normalizeToRMS(std::vector<float>& samples, float targetDb) {
     const float currentRmsDb = computeRMSDb(samples);
     float gainDb = targetDb - currentRmsDb;
     float gain = dbToLinear(gainDb);
-    for (float& s : samples) s *= gain;
+    
+    if (samples.size() >= kParallelThreshold) {
+        // Parallel gain application for large buffers
+        std::for_each(std::execution::par_unseq, samples.begin(), samples.end(),
+            [gain](float& s) { s *= gain; });
+    } else {
+        for (float& s : samples) s *= gain;
+    }
 }
 
 void DSP::compressor(std::vector<float>& samples, float thresholdDb, float ratio,

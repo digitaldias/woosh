@@ -513,7 +513,7 @@ void MainWindow::loadFileList(const QStringList& paths) {
 
     progressBar_->setMaximum(0);  // Indeterminate progress
     progressBar_->setVisible(true);
-    statusBar()->showMessage(tr("Loading %1 file(s)...").arg(paths.size()));
+    statusBar()->showMessage(tr("Loading %1 file(s) in parallel...").arg(paths.size()));
 
     // Capture engine pointer for the lambda (engine_ lifetime is tied to MainWindow)
     AudioEngine* engine = &engine_;
@@ -525,15 +525,36 @@ void MainWindow::loadFileList(const QStringList& paths) {
                 this, &MainWindow::onLoadingFinished);
     }
 
-    // Run loading in background thread
-    QFuture<std::vector<AudioClip>> future = QtConcurrent::run([engine, paths]() {
-        std::vector<AudioClip> loadedClips;
-        loadedClips.reserve(static_cast<size_t>(paths.size()));
+    // Convert QStringList to std::vector for QtConcurrent
+    std::vector<QString> pathVec(paths.begin(), paths.end());
 
-        for (const auto& path : paths) {
-            auto clipOpt = engine->loadClip(path.toStdString());
+    // Load files in parallel using all available CPU cores
+    QFuture<std::vector<AudioClip>> future = QtConcurrent::run([engine, pathVec = std::move(pathVec)]() {
+        // Use QtConcurrent::mapped internally for true parallel loading
+        QList<QString> pathList;
+        pathList.reserve(static_cast<qsizetype>(pathVec.size()));
+        for (const auto& p : pathVec) {
+            pathList.append(p);
+        }
+
+        // Map: load each file in parallel
+        QFuture<std::optional<AudioClip>> mappedFuture = QtConcurrent::mapped(pathList,
+            [engine](const QString& path) -> std::optional<AudioClip> {
+                auto clipOpt = engine->loadClip(path.toStdString());
+                if (clipOpt) {
+                    clipOpt->saveOriginal();
+                }
+                return clipOpt;
+            });
+
+        // Wait for all loads to complete
+        mappedFuture.waitForFinished();
+
+        // Collect results (filter out failed loads)
+        std::vector<AudioClip> loadedClips;
+        loadedClips.reserve(pathVec.size());
+        for (const auto& clipOpt : mappedFuture.results()) {
             if (clipOpt) {
-                clipOpt->saveOriginal();
                 loadedClips.push_back(std::move(*clipOpt));
             }
         }
@@ -825,9 +846,18 @@ void MainWindow::onApplyToAll(bool normalize, bool compress) {
 }
 
 void MainWindow::applyProcessing(const std::vector<int>& indices, bool normalize, bool compress) {
-    progressBar_->setMaximum(static_cast<int>(indices.size()));
-    progressBar_->setValue(0);
+    // Prevent starting new processing while one is in progress
+    if (processWatcher_ && processWatcher_->isRunning()) {
+        QMessageBox::warning(this, tr("Busy"), tr("A processing operation is already in progress."));
+        return;
+    }
+
+    progressBar_->setMaximum(0);  // Indeterminate progress
     progressBar_->setVisible(true);
+    statusBar()->showMessage(tr("Processing %1 clip(s) in parallel...").arg(indices.size()));
+
+    // Store indices for use in completion handler
+    processingIndices_ = indices;
 
     float normTarget = static_cast<float>(processingPanel_->normalizeTarget());
     float threshold = processingPanel_->compThreshold();
@@ -836,34 +866,91 @@ void MainWindow::applyProcessing(const std::vector<int>& indices, bool normalize
     float release = processingPanel_->compReleaseMs();
     float makeup = processingPanel_->compMakeupDb();
 
-    int processed = 0;
+    // Collect clips to process (make copies for thread safety)
+    std::vector<AudioClip> clipsToProcess;
+    clipsToProcess.reserve(indices.size());
     for (int idx : indices) {
-        if (idx < 0 || idx >= static_cast<int>(clips_.size())) continue;
-
-        auto& clip = clips_[static_cast<size_t>(idx)];
-
-        if (normalize) {
-            engine_.normalizeToPeak(clip, normTarget);
+        if (idx >= 0 && idx < static_cast<int>(clips_.size())) {
+            clipsToProcess.push_back(clips_[static_cast<size_t>(idx)]);
         }
-        if (compress) {
-            engine_.compress(clip, threshold, ratio, attack, release, makeup);
-        }
-
-        clip.setModified(true);
-        ++processed;
-        progressBar_->setValue(processed);
     }
 
+    // Create watcher if needed
+    if (!processWatcher_) {
+        processWatcher_ = new QFutureWatcher<std::vector<AudioClip>>(this);
+        connect(processWatcher_, &QFutureWatcher<std::vector<AudioClip>>::finished,
+                this, &MainWindow::onProcessingFinished);
+    }
+
+    // Capture engine pointer
+    AudioEngine* engine = &engine_;
+
+    // Process clips in parallel
+    QFuture<std::vector<AudioClip>> future = QtConcurrent::run(
+        [engine, clipsToProcess = std::move(clipsToProcess), normalize, compress,
+         normTarget, threshold, ratio, attack, release, makeup]() mutable {
+            
+            // Convert to QList for QtConcurrent::mapped
+            QList<AudioClip> clipList;
+            clipList.reserve(static_cast<qsizetype>(clipsToProcess.size()));
+            for (auto& clip : clipsToProcess) {
+                clipList.append(std::move(clip));
+            }
+
+            // Map: process each clip in parallel
+            QFuture<AudioClip> mappedFuture = QtConcurrent::mapped(clipList,
+                [engine, normalize, compress, normTarget, threshold, ratio, attack, release, makeup]
+                (AudioClip clip) -> AudioClip {
+                    if (normalize) {
+                        engine->normalizeToPeak(clip, normTarget);
+                    }
+                    if (compress) {
+                        engine->compress(clip, threshold, ratio, attack, release, makeup);
+                    }
+                    clip.setModified(true);
+                    return clip;
+                });
+
+            // Wait for all processing to complete
+            mappedFuture.waitForFinished();
+
+            // Collect results
+            std::vector<AudioClip> results;
+            results.reserve(clipList.size());
+            for (const auto& clip : mappedFuture.results()) {
+                results.push_back(clip);
+            }
+            return results;
+        });
+
+    processWatcher_->setFuture(future);
+}
+
+void MainWindow::onProcessingFinished() {
     progressBar_->setVisible(false);
+
+    if (!processWatcher_) return;
+
+    std::vector<AudioClip> processedClips = processWatcher_->result();
+    
+    // Update clips with processed data
+    for (size_t i = 0; i < processedClips.size() && i < processingIndices_.size(); ++i) {
+        int idx = processingIndices_[i];
+        if (idx >= 0 && idx < static_cast<int>(clips_.size())) {
+            clips_[static_cast<size_t>(idx)] = std::move(processedClips[i]);
+        }
+    }
+
     refreshModelPreservingSelection();
 
     int currentIdx = currentClipIndex();
-    if (currentIdx >= 0 && std::find(indices.begin(), indices.end(), currentIdx) != indices.end()) {
+    if (currentIdx >= 0 && std::find(processingIndices_.begin(), processingIndices_.end(), currentIdx) != processingIndices_.end()) {
         updateWaveformView();
         undoAction_->setEnabled(currentClip() && currentClip()->hasOriginal());
     }
 
-    statusBar()->showMessage(tr("Processed %1 clip(s)").arg(processed));
+    statusBar()->showMessage(tr("Processed %1 clip(s)").arg(processedClips.size()));
+    processingIndices_.clear();
 }
 
 // ============================================================================
@@ -943,13 +1030,28 @@ void MainWindow::exportClips(const std::vector<int>& indices) {
     // Capture engine pointer for the lambda
     AudioEngine* engine = &engine_;
 
-    // Run export in background thread
+    // Run exports in parallel using all available CPU cores
     QFuture<int> future = QtConcurrent::run([engine, items = std::move(items)]() {
+        // Convert to QList for QtConcurrent::mapped
+        QList<ExportItem> itemList;
+        itemList.reserve(static_cast<qsizetype>(items.size()));
+        for (auto& item : items) {
+            itemList.append(std::move(item));
+        }
+
+        // Map: export each file in parallel
+        QFuture<bool> mappedFuture = QtConcurrent::mapped(itemList,
+            [engine](const ExportItem& item) -> bool {
+                return engine->exportWav(item.clip, item.destFolder);
+            });
+
+        // Wait for all exports to complete
+        mappedFuture.waitForFinished();
+
+        // Count successes
         int exported = 0;
-        for (const auto& item : items) {
-            if (engine->exportWav(item.clip, item.destFolder)) {
-                ++exported;
-            }
+        for (bool success : mappedFuture.results()) {
+            if (success) ++exported;
         }
         return exported;
     });
