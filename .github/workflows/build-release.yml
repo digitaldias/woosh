@@ -23,6 +23,10 @@ jobs:
   build-windows:
     runs-on: windows-latest
     
+    permissions:
+      contents: read
+      checks: write
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,12 +71,12 @@ jobs:
         run: ctest -C ${{ env.BUILD_TYPE }} --output-on-failure --output-junit test-results.xml
 
       - name: Publish Test Results
-        uses: EnricoMi/publish-unit-test-result-action/windows@v2
+        uses: dorny/test-reporter@v1
         if: always()
         with:
-          files: build/test-results.xml
-          check_name: "Test Results (Windows)"
-          comment_mode: off
+          name: Test Results (Windows)
+          path: build/test-results.xml
+          reporter: java-junit
 
       - name: Prepare release package
         run: |

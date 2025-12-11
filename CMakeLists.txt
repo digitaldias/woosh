@@ -81,6 +81,7 @@ endif()
 find_package(Qt6 COMPONENTS Widgets Multimedia Concurrent REQUIRED)
 find_package(SndFile CONFIG REQUIRED)
 find_package(mpg123 CONFIG REQUIRED)
+find_package(mp3lame CONFIG REQUIRED)
 
 # mpg123 target name varies by vcpkg version
 if(TARGET MPG123::libmpg123)
@@ -101,6 +102,9 @@ set(SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 set(WOOSH_SOURCES
   ${SRC_ROOT}/main.cpp
+  # Core
+  ${SRC_ROOT}/core/Project.cpp
+  ${SRC_ROOT}/core/ProjectManager.cpp
   # UI components
   ${SRC_ROOT}/ui/MainWindow.cpp
   ${SRC_ROOT}/ui/ClipTableModel.cpp
@@ -110,12 +114,15 @@ set(WOOSH_SOURCES
   ${SRC_ROOT}/ui/WaveformView.cpp
   ${SRC_ROOT}/ui/SettingsDialog.cpp
   ${SRC_ROOT}/ui/VuMeterWidget.cpp
+  ${SRC_ROOT}/ui/NewProjectDialog.cpp
+  ${SRC_ROOT}/ui/ProjectSettingsDialog.cpp
   # Audio core
   ${SRC_ROOT}/audio/AudioEngine.cpp
   ${SRC_ROOT}/audio/AudioClip.cpp
   ${SRC_ROOT}/audio/AudioPlayer.cpp
   ${SRC_ROOT}/audio/Formats/WavCodec.cpp
   ${SRC_ROOT}/audio/Formats/Mp3Codec.cpp
+  ${SRC_ROOT}/audio/Formats/Mp3Encoder.cpp
   # Utilities
   ${SRC_ROOT}/utils/FileScanner.cpp
   ${SRC_ROOT}/utils/DSP.cpp
@@ -174,6 +181,7 @@ target_link_libraries(Woosh PRIVATE
   Qt6::Concurrent
   SndFile::sndfile 
   ${MPG123_TARGET}
+  mp3lame::mp3lame
 )
 
 target_compile_definitions(Woosh PRIVATE 
@@ -225,6 +233,7 @@ set(TEST_COMMON_SOURCES
   ${SRC_ROOT}/audio/AudioClip.cpp
   ${SRC_ROOT}/audio/Formats/WavCodec.cpp
   ${SRC_ROOT}/audio/Formats/Mp3Codec.cpp
+  ${SRC_ROOT}/audio/Formats/Mp3Encoder.cpp
   ${SRC_ROOT}/utils/DSP.cpp
 )
 
@@ -240,6 +249,7 @@ target_include_directories(AudioEngineTests PRIVATE
 target_link_libraries(AudioEngineTests PRIVATE 
   SndFile::sndfile 
   ${MPG123_TARGET}
+  mp3lame::mp3lame
 )
 add_test(NAME AudioEngineTests COMMAND AudioEngineTests)
 
@@ -267,8 +277,20 @@ target_include_directories(AudioClipTests PRIVATE
 target_link_libraries(AudioClipTests PRIVATE)
 add_test(NAME AudioClipTests COMMAND AudioClipTests)
 
+# --- Project Tests ---
+add_executable(ProjectTests 
+  ${SRC_ROOT}/tests/ProjectTests.cpp
+  ${SRC_ROOT}/core/Project.cpp
+)
+target_include_directories(ProjectTests PRIVATE 
+  ${SRC_ROOT}
+  ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+target_link_libraries(ProjectTests PRIVATE)
+add_test(NAME ProjectTests COMMAND ProjectTests)
+
 # Aggregate target to build all tests
-add_custom_target(WooshTests DEPENDS AudioEngineTests DSPTests AudioClipTests)
+add_custom_target(WooshTests DEPENDS AudioEngineTests DSPTests AudioClipTests ProjectTests)
 
 # ============================================================================
 # Installation

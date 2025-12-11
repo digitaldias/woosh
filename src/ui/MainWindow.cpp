@@ -6,6 +6,7 @@
 #include "MainWindow.h"
 
 #include <QAction>
+#include <QCloseEvent>
 #include <QDialog>
 #include <QDir>
 #include <QFileDialog>
@@ -31,6 +32,7 @@
 #include <QtConcurrent>
 
 #include "audio/AudioPlayer.h"
+#include "audio/Formats/Mp3Encoder.h"
 #include "ui/ClipTableModel.h"
 #include "ui/OutputPanel.h"
 #include "ui/ProcessingPanel.h"
@@ -38,6 +40,8 @@
 #include "ui/TransportPanel.h"
 #include "ui/WaveformView.h"
 #include "ui/VuMeterWidget.h"
+#include "ui/NewProjectDialog.h"
+#include "ui/ProjectSettingsDialog.h"
 #include "utils/FileScanner.h"
 
 // Application settings keys
@@ -49,6 +53,8 @@ constexpr const char* kKeyOutputDir = "OutputDirectory";
 constexpr const char* kKeyWindowGeom = "WindowGeometry";
 constexpr const char* kKeyRecentFiles = "RecentFiles";
 constexpr const char* kKeyRecentFolders = "RecentFolders";
+constexpr const char* kKeyDefaultAuthor = "DefaultAuthorName";
+constexpr const char* kKeyShowTooltips = "ShowColumnTooltips";
 }  // namespace
 
 // ============================================================================
@@ -62,6 +68,16 @@ MainWindow::MainWindow(QWidget* parent)
     loadSettings();
     setupUi();
     setupMenus();
+    
+    // Connect ProjectManager signals
+    connect(&projectManager_, &ProjectManager::projectChanged, 
+            this, &MainWindow::onProjectChanged);
+    connect(&projectManager_, &ProjectManager::dirtyStateChanged, 
+            this, &MainWindow::onDirtyStateChanged);
+    connect(&projectManager_, &ProjectManager::recentProjectsChanged,
+            this, &MainWindow::onRecentProjectsChanged);
+    
+    updateWindowTitle();
     statusBar()->showMessage(tr("Ready"));
 }
 
@@ -79,12 +95,16 @@ void MainWindow::loadSettings() {
     lastOpenDirectory_ = settings_->value(kKeyLastDir, QDir::homePath()).toString();
     recentFiles_ = settings_->value(kKeyRecentFiles).toStringList();
     recentFolders_ = settings_->value(kKeyRecentFolders).toStringList();
+    defaultAuthorName_ = settings_->value(kKeyDefaultAuthor).toString();
+    showColumnTooltips_ = settings_->value(kKeyShowTooltips, true).toBool();
 }
 
 void MainWindow::saveSettings() {
     settings_->setValue(kKeyLastDir, lastOpenDirectory_);
     settings_->setValue(kKeyRecentFiles, recentFiles_);
     settings_->setValue(kKeyRecentFolders, recentFolders_);
+    settings_->setValue(kKeyDefaultAuthor, defaultAuthorName_);
+    settings_->setValue(kKeyShowTooltips, showColumnTooltips_);
     if (outputPanel_) {
         settings_->setValue(kKeyOutputDir, outputPanel_->outputFolder());
     }
@@ -161,8 +181,10 @@ void MainWindow::setupUi() {
 
     rightLayout->addWidget(processingRow);
 
-    connect(processingPanel_, &ProcessingPanel::applyToSelected, this, &MainWindow::onApplyToSelected);
-    connect(processingPanel_, &ProcessingPanel::applyToAll, this, &MainWindow::onApplyToAll);
+    connect(processingPanel_, &ProcessingPanel::normalizeSelectedRequested, this, &MainWindow::onNormalizeSelected);
+    connect(processingPanel_, &ProcessingPanel::normalizeAllRequested, this, &MainWindow::onNormalizeAll);
+    connect(processingPanel_, &ProcessingPanel::compressSelectedRequested, this, &MainWindow::onCompressSelected);
+    connect(processingPanel_, &ProcessingPanel::compressAllRequested, this, &MainWindow::onCompressAll);
 
     outputPanel_ = new OutputPanel(rightPane);
     rightLayout->addWidget(outputPanel_);
@@ -218,20 +240,42 @@ void MainWindow::setupMenus() {
     // --- File menu ---
     auto* fileMenu = menuBar()->addMenu(tr("&File"));
 
-    openFilesAction_ = fileMenu->addAction(tr("&Open Files..."), this, &MainWindow::openFiles);
-    openFilesAction_->setShortcut(QKeySequence::Open);
+    // Project actions
+    newProjectAction_ = fileMenu->addAction(tr("&New Project..."), this, &MainWindow::newProject);
+    newProjectAction_->setShortcut(QKeySequence::New);
 
-    openFolderAction_ = fileMenu->addAction(tr("Open &Folder..."), this, &MainWindow::openFolder);
-    openFolderAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O));
+    openProjectAction_ = fileMenu->addAction(tr("&Open Project..."), this, &MainWindow::openProject);
+    openProjectAction_->setShortcut(QKeySequence::Open);
+
+    saveProjectAction_ = fileMenu->addAction(tr("&Save Project"), this, &MainWindow::saveProject);
+    saveProjectAction_->setShortcut(QKeySequence::Save);
+
+    saveProjectAsAction_ = fileMenu->addAction(tr("Save Project &As..."), this, &MainWindow::saveProjectAs);
+    saveProjectAsAction_->setShortcut(QKeySequence::SaveAs);
 
     fileMenu->addSeparator();
 
-    // Recent Files submenu
-    recentFilesMenu_ = fileMenu->addMenu(tr("Recent &Files"));
+    // Recent Projects submenu
+    recentProjectsMenu_ = fileMenu->addMenu(tr("Recent &Projects"));
+    updateRecentProjectsMenu();
+
+    fileMenu->addSeparator();
+
+    projectSettingsAction_ = fileMenu->addAction(tr("Project Settin&gs..."), this, &MainWindow::openProjectSettings);
+
+    fileMenu->addSeparator();
+
+    // Legacy file operations (hidden submenu for power users)
+    auto* legacyMenu = fileMenu->addMenu(tr("&Import"));
+    openFilesAction_ = legacyMenu->addAction(tr("Import &Files..."), this, &MainWindow::openFiles);
+    openFolderAction_ = legacyMenu->addAction(tr("Import F&older..."), this, &MainWindow::openFolder);
+
+    // Recent Files submenu (moved to legacy)
+    recentFilesMenu_ = legacyMenu->addMenu(tr("Recent &Files"));
     updateRecentFilesMenu();
 
-    // Recent Folders submenu
-    recentFoldersMenu_ = fileMenu->addMenu(tr("Recent F&olders"));
+    // Recent Folders submenu (moved to legacy)
+    recentFoldersMenu_ = legacyMenu->addMenu(tr("Recent F&olders"));
     updateRecentFoldersMenu();
 
     fileMenu->addSeparator();
@@ -429,14 +473,306 @@ void MainWindow::openRecentFolder() {
     addRecentFolder(path);
 }
 
+// ============================================================================
+// Project Management
+// ============================================================================
+
+void MainWindow::newProject() {
+    if (!maybeSaveProject()) return;
+
+    NewProjectDialog dialog(this);
+    dialog.setDefaultAuthorName(defaultAuthorName_);
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    projectManager_.newProject(
+        dialog.projectName(),
+        dialog.rawFolder(),
+        dialog.gameFolder()
+    );
+
+    // Set export settings with metadata from dialog
+    if (projectManager_.hasProject()) {
+        ExportSettings exportSettings;
+        exportSettings.format = ExportFormat::MP3;
+        exportSettings.mp3Bitrate = 160;
+        exportSettings.gameName = dialog.gameName().toStdString();
+        exportSettings.authorName = dialog.authorName().toStdString();
+        exportSettings.embedMetadata = true;
+        projectManager_.project().setExportSettings(exportSettings);
+    }
+
+    // Clear existing clips and load from RAW folder
+    clips_.clear();
+    clipModel_->refresh();
+    
+    loadProjectClips();
+    updateWindowTitle();
+    statusBar()->showMessage(tr("Created new project: %1").arg(dialog.projectName()));
+}
+
+void MainWindow::openProject() {
+    if (!maybeSaveProject()) return;
+
+    QString path = QFileDialog::getOpenFileName(
+        this, tr("Open Project"),
+        lastOpenDirectory_,
+        tr("Woosh Projects (*.wooshp)")
+    );
+
+    if (path.isEmpty()) return;
+
+    QFileInfo fi(path);
+    lastOpenDirectory_ = fi.absolutePath();
+
+    if (!projectManager_.openProject(path)) {
+        QMessageBox::critical(this, tr("Error"),
+            tr("Failed to open project:\n%1").arg(path));
+        return;
+    }
+
+    clips_.clear();
+    clipModel_->refresh();
+    
+    loadProjectClips();
+    updateWindowTitle();
+    statusBar()->showMessage(tr("Opened project: %1").arg(fi.baseName()));
+}
+
+void MainWindow::saveProject() {
+    if (!projectManager_.hasProject()) {
+        QMessageBox::information(this, tr("No Project"),
+            tr("No project is currently open. Use File → New Project to create one."));
+        return;
+    }
+
+    auto& project = projectManager_.project();
+    if (project.filePath().empty()) {
+        saveProjectAs();
+        return;
+    }
+
+    if (projectManager_.saveProject()) {
+        statusBar()->showMessage(tr("Project saved"));
+    } else {
+        QMessageBox::critical(this, tr("Error"),
+            tr("Failed to save project."));
+    }
+}
+
+void MainWindow::saveProjectAs() {
+    if (!projectManager_.hasProject()) {
+        QMessageBox::information(this, tr("No Project"),
+            tr("No project is currently open. Use File → New Project to create one."));
+        return;
+    }
+
+    auto& project = projectManager_.project();
+    QString path = QFileDialog::getSaveFileName(
+        this, tr("Save Project As"),
+        lastOpenDirectory_ + "/" + QString::fromStdString(project.name()) + ".wooshp",
+        tr("Woosh Projects (*.wooshp)")
+    );
+
+    if (path.isEmpty()) return;
+
+    // Ensure .wooshp extension
+    if (!path.endsWith(".wooshp", Qt::CaseInsensitive)) {
+        path += ".wooshp";
+    }
+
+    QFileInfo fi(path);
+    lastOpenDirectory_ = fi.absolutePath();
+
+    if (projectManager_.saveProjectAs(path)) {
+        updateWindowTitle();
+        statusBar()->showMessage(tr("Project saved as: %1").arg(fi.fileName()));
+    } else {
+        QMessageBox::critical(this, tr("Error"),
+            tr("Failed to save project."));
+    }
+}
+
+void MainWindow::openRecentProject() {
+    auto* action = qobject_cast<QAction*>(sender());
+    if (!action) return;
+
+    QString path = action->data().toString();
+    if (path.isEmpty()) return;
+
+    if (!maybeSaveProject()) return;
+
+    QFileInfo fi(path);
+    if (!fi.exists()) {
+        QMessageBox::warning(this, tr("Project Not Found"),
+            tr("The project file no longer exists:\n%1").arg(path));
+        return;
+    }
+
+    if (!projectManager_.openProject(path)) {
+        QMessageBox::critical(this, tr("Error"),
+            tr("Failed to open project:\n%1").arg(path));
+        return;
+    }
+
+    clips_.clear();
+    clipModel_->refresh();
+    
+    loadProjectClips();
+    updateWindowTitle();
+    statusBar()->showMessage(tr("Opened project: %1").arg(fi.baseName()));
+}
+
+void MainWindow::openProjectSettings() {
+    if (!projectManager_.hasProject()) {
+        QMessageBox::information(this, tr("No Project"),
+            tr("No project is currently open. Use File → New Project to create one."));
+        return;
+    }
+
+    auto& project = projectManager_.project();
+    ProjectSettingsDialog dialog(this);
+    dialog.loadFromProject(project);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        dialog.applyToProject(project);
+        // Project is automatically marked dirty when modified
+        updateWindowTitle();
+        
+        // Update output panel with game folder
+        if (outputPanel_) {
+            outputPanel_->setOutputFolder(QString::fromStdString(project.gameFolder()));
+        }
+        
+        statusBar()->showMessage(tr("Project settings updated"));
+    }
+}
+
+void MainWindow::updateWindowTitle() {
+    QString title = tr("Woosh - Audio Batch Editor");
+    
+    if (projectManager_.hasProject()) {
+        title = QString::fromStdString(projectManager_.project().name());
+        if (projectManager_.isDirty()) {
+            title += " *";
+        }
+        title += " - Woosh";
+    }
+    
+    setWindowTitle(title);
+}
+
+void MainWindow::updateRecentProjectsMenu() {
+    if (!recentProjectsMenu_) return;
+
+    recentProjectsMenu_->clear();
+
+    const auto recentProjects = projectManager_.recentProjects();
+    
+    if (recentProjects.isEmpty()) {
+        auto* emptyAction = recentProjectsMenu_->addAction(tr("(No recent projects)"));
+        emptyAction->setEnabled(false);
+        return;
+    }
+
+    for (const QString& path : recentProjects) {
+        QFileInfo fi(path);
+        QString displayName = fi.baseName();
+        auto* action = recentProjectsMenu_->addAction(displayName);
+        action->setData(path);
+        action->setToolTip(path);
+        connect(action, &QAction::triggered, this, &MainWindow::openRecentProject);
+    }
+}
+
+bool MainWindow::maybeSaveProject() {
+    if (!projectManager_.isDirty()) return true;
+    if (!projectManager_.hasProject()) return true;
+
+    auto& project = projectManager_.project();
+
+    QMessageBox::StandardButton result = QMessageBox::question(
+        this, tr("Save Project?"),
+        tr("The project '%1' has unsaved changes.\n\nDo you want to save before continuing?")
+            .arg(QString::fromStdString(project.name())),
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+        QMessageBox::Save
+    );
+
+    switch (result) {
+        case QMessageBox::Save:
+            saveProject();
+            return !projectManager_.isDirty();  // Return true if save succeeded
+        case QMessageBox::Discard:
+            return true;
+        case QMessageBox::Cancel:
+        default:
+            return false;
+    }
+}
+
+void MainWindow::loadProjectClips() {
+    if (!projectManager_.hasProject()) return;
+
+    auto& project = projectManager_.project();
+    QString rawFolder = QString::fromStdString(project.rawFolder());
+    if (rawFolder.isEmpty()) return;
+
+    // Scan RAW folder for audio files
+    FileScanner scanner;
+    auto found = scanner.scan(rawFolder.toStdString());
+
+    if (found.empty()) {
+        statusBar()->showMessage(tr("No audio files found in RAW folder"));
+        return;
+    }
+
+    QStringList list;
+    list.reserve(static_cast<int>(found.size()));
+    for (const auto& p : found) {
+        list << QString::fromStdString(p);
+    }
+
+    loadFileList(list);
+
+    // Update output panel with game folder
+    if (outputPanel_ && !project.gameFolder().empty()) {
+        outputPanel_->setOutputFolder(QString::fromStdString(project.gameFolder()));
+    }
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+    if (!maybeSaveProject()) {
+        event->ignore();
+        return;
+    }
+    QMainWindow::closeEvent(event);
+}
+
+void MainWindow::onProjectChanged() {
+    updateWindowTitle();
+    updateRecentProjectsMenu();
+}
+
+void MainWindow::onDirtyStateChanged(bool dirty) {
+    Q_UNUSED(dirty);
+    updateWindowTitle();
+}
+
+void MainWindow::onRecentProjectsChanged() {
+    updateRecentProjectsMenu();
+}
+
 void MainWindow::openSettings() {
     SettingsDialog dialog(this);
-    dialog.setShowColumnTooltips(clipModel_->showTooltips());
+    dialog.setShowColumnTooltips(showColumnTooltips_);
+    dialog.setDefaultAuthorName(defaultAuthorName_);
 
     connect(&dialog, &SettingsDialog::clearHistoryRequested, this, &MainWindow::onClearHistory);
 
     if (dialog.exec() == QDialog::Accepted) {
-        clipModel_->setShowTooltips(dialog.showColumnTooltips());
+        showColumnTooltips_ = dialog.showColumnTooltips();
+        defaultAuthorName_ = dialog.defaultAuthorName();
+        clipModel_->setShowTooltips(showColumnTooltips_);
     }
 }
 
@@ -781,6 +1117,11 @@ void MainWindow::onApplyTrim() {
 
     if (startFrame >= effectiveEnd) return;
 
+    // Calculate trim times in seconds before applying
+    double sampleRate = static_cast<double>(clip->sampleRate());
+    double trimStartSec = static_cast<double>(startFrame) / sampleRate;
+    double trimEndSec = static_cast<double>(effectiveEnd) / sampleRate;
+
     auto& samples = clip->samplesMutable();
     size_t startSample = static_cast<size_t>(startFrame * channels);
     size_t endSample = static_cast<size_t>(effectiveEnd * channels);
@@ -793,6 +1134,18 @@ void MainWindow::onApplyTrim() {
     clip->setModified(true);
 
     engine_.updateClipMetrics(*clip);
+
+    // Update project clip state if we have a project
+    if (projectManager_.hasProject()) {
+        std::string relativePath = clip->displayName();
+        projectManager_.project().updateClipState(relativePath, 
+            [trimStartSec, trimEndSec](ClipState& state) {
+                state.isTrimmed = true;
+                state.trimStartSec = trimStartSec;
+                state.trimEndSec = trimEndSec;
+            });
+        projectManager_.project().markDirty();
+    }
 
     waveformView_->clearTrim();
     waveformView_->setClip(clip);
@@ -826,23 +1179,42 @@ void MainWindow::onUndoProcessing() {
 // Processing
 // ============================================================================
 
-void MainWindow::onApplyToSelected(bool normalize, bool compress) {
+void MainWindow::onNormalizeSelected() {
     auto indices = selectedIndices();
     if (indices.empty()) {
         QMessageBox::information(this, tr("No Selection"),
-            tr("Please select one or more clips to process."));
+            tr("Please select one or more clips to normalize."));
         return;
     }
-    applyProcessing(indices, normalize, compress);
+    applyProcessing(indices, true, false);
 }
 
-void MainWindow::onApplyToAll(bool normalize, bool compress) {
+void MainWindow::onNormalizeAll() {
     if (clips_.empty()) {
         QMessageBox::information(this, tr("No Clips"),
             tr("Please load some audio files first."));
         return;
     }
-    applyProcessing(allIndices(), normalize, compress);
+    applyProcessing(allIndices(), true, false);
+}
+
+void MainWindow::onCompressSelected() {
+    auto indices = selectedIndices();
+    if (indices.empty()) {
+        QMessageBox::information(this, tr("No Selection"),
+            tr("Please select one or more clips to compress."));
+        return;
+    }
+    applyProcessing(indices, false, true);
+}
+
+void MainWindow::onCompressAll() {
+    if (clips_.empty()) {
+        QMessageBox::information(this, tr("No Clips"),
+            tr("Please load some audio files first."));
+        return;
+    }
+    applyProcessing(allIndices(), false, true);
 }
 
 void MainWindow::applyProcessing(const std::vector<int>& indices, bool normalize, bool compress) {
@@ -865,6 +1237,16 @@ void MainWindow::applyProcessing(const std::vector<int>& indices, bool normalize
     float attack = processingPanel_->compAttackMs();
     float release = processingPanel_->compReleaseMs();
     float makeup = processingPanel_->compMakeupDb();
+
+    // Store processing parameters for async completion handler
+    processingAppliedNormalize_ = normalize;
+    processingAppliedCompress_ = compress;
+    processingNormalizeTarget_ = normTarget;
+    processingCompThreshold_ = threshold;
+    processingCompRatio_ = ratio;
+    processingCompAttackMs_ = attack;
+    processingCompReleaseMs_ = release;
+    processingCompMakeupDb_ = makeup;
 
     // Collect clips to process (make copies for thread safety)
     std::vector<AudioClip> clipsToProcess;
@@ -938,7 +1320,42 @@ void MainWindow::onProcessingFinished() {
         int idx = processingIndices_[i];
         if (idx >= 0 && idx < static_cast<int>(clips_.size())) {
             clips_[static_cast<size_t>(idx)] = std::move(processedClips[i]);
+            
+            // Update project clip state if we have a project
+            if (projectManager_.hasProject()) {
+                std::string relativePath = clips_[static_cast<size_t>(idx)].displayName();
+                bool appliedNormalize = processingAppliedNormalize_;
+                bool appliedCompress = processingAppliedCompress_;
+                float normTarget = processingNormalizeTarget_;
+                float threshold = processingCompThreshold_;
+                float ratio = processingCompRatio_;
+                float attack = processingCompAttackMs_;
+                float release = processingCompReleaseMs_;
+                float makeup = processingCompMakeupDb_;
+                
+                projectManager_.project().updateClipState(relativePath, 
+                    [appliedNormalize, appliedCompress, normTarget, threshold, 
+                     ratio, attack, release, makeup](ClipState& state) {
+                        if (appliedNormalize) {
+                            state.isNormalized = true;
+                            state.normalizeTargetDb = static_cast<double>(normTarget);
+                        }
+                        if (appliedCompress) {
+                            state.isCompressed = true;
+                            state.compressorSettings.threshold = threshold;
+                            state.compressorSettings.ratio = ratio;
+                            state.compressorSettings.attackMs = attack;
+                            state.compressorSettings.releaseMs = release;
+                            state.compressorSettings.makeupDb = makeup;
+                        }
+                    });
+            }
         }
+    }
+
+    // Mark project dirty if we updated clip states
+    if (projectManager_.hasProject() && !processingIndices_.empty()) {
+        projectManager_.project().markDirty();
     }
 
     refreshModelPreservingSelection();
@@ -996,6 +1413,28 @@ void MainWindow::exportClips(const std::vector<int>& indices) {
     progressBar_->setVisible(true);
     statusBar()->showMessage(tr("Exporting %1 file(s)...").arg(indices.size()));
 
+    // Get export settings from project (or use defaults)
+    ExportFormat exportFormat = ExportFormat::WAV;
+    Mp3Encoder::BitrateMode bitrate = Mp3Encoder::BitrateMode::CBR_160;
+    Mp3Metadata metadata;
+    metadata.comment = "Made by Woosh";
+
+    if (projectManager_.hasProject()) {
+        const auto& exportSettings = projectManager_.project().exportSettings();
+        exportFormat = exportSettings.format;
+        
+        switch (exportSettings.mp3Bitrate) {
+            case 128: bitrate = Mp3Encoder::BitrateMode::CBR_128; break;
+            case 160: bitrate = Mp3Encoder::BitrateMode::CBR_160; break;
+            case 192: bitrate = Mp3Encoder::BitrateMode::CBR_192; break;
+            default:  bitrate = Mp3Encoder::BitrateMode::CBR_160; break;
+        }
+        
+        metadata.artist = exportSettings.authorName;
+        metadata.album = exportSettings.gameName;
+        metadata.comment = "Made by Woosh";
+    }
+
     // Collect clips and destination info for background thread
     struct ExportItem {
         AudioClip clip;  // Copy of clip data
@@ -1031,7 +1470,8 @@ void MainWindow::exportClips(const std::vector<int>& indices) {
     AudioEngine* engine = &engine_;
 
     // Run exports in parallel using all available CPU cores
-    QFuture<int> future = QtConcurrent::run([engine, items = std::move(items)]() {
+    QFuture<int> future = QtConcurrent::run(
+        [engine, items = std::move(items), exportFormat, bitrate, metadata]() {
         // Convert to QList for QtConcurrent::mapped
         QList<ExportItem> itemList;
         itemList.reserve(static_cast<qsizetype>(items.size()));
@@ -1041,8 +1481,17 @@ void MainWindow::exportClips(const std::vector<int>& indices) {
 
         // Map: export each file in parallel
         QFuture<bool> mappedFuture = QtConcurrent::mapped(itemList,
-            [engine](const ExportItem& item) -> bool {
-                return engine->exportWav(item.clip, item.destFolder);
+            [engine, exportFormat, bitrate, metadata](const ExportItem& item) -> bool {
+                switch (exportFormat) {
+                    case ExportFormat::MP3:
+                        return engine->exportMp3(item.clip, item.destFolder, bitrate, metadata);
+                    case ExportFormat::OGG:
+                        // OGG export not yet implemented, fall back to WAV
+                        return engine->exportWav(item.clip, item.destFolder);
+                    case ExportFormat::WAV:
+                    default:
+                        return engine->exportWav(item.clip, item.destFolder);
+                }
             });
 
         // Wait for all exports to complete

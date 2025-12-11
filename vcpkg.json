@@ -9,7 +9,8 @@
     {
       "name": "mpg123",
       "default-features": false
-    }
+    },
+    "mp3lame"
   ]
 }
 

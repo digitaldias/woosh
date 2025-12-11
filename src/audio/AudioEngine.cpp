@@ -49,9 +49,24 @@ bool AudioEngine::exportWav(const AudioClip& clip, const std::string& outFolder)
     fs::path folder(outFolder);
     fs::create_directories(folder);
     fs::path inPath(clip.filePath());
-    auto outName = inPath.stem().string() + "_woosh.wav";
+    auto outName = inPath.stem().string() + ".wav";
     fs::path outPath = folder / outName;
     return wavCodec_.write(outPath.string(), clip);
+}
+
+bool AudioEngine::exportMp3(
+    const AudioClip& clip, 
+    const std::string& outFolder,
+    Mp3Encoder::BitrateMode bitrate,
+    const Mp3Metadata& metadata
+) {
+    namespace fs = std::filesystem;
+    fs::path folder(outFolder);
+    fs::create_directories(folder);
+    fs::path inPath(clip.filePath());
+    auto outName = inPath.stem().string() + ".mp3";
+    fs::path outPath = folder / outName;
+    return mp3Encoder_.encode(clip, outPath.string(), bitrate, metadata);
 }
 
 void AudioEngine::updateClipMetrics(AudioClip& clip) {

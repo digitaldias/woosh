@@ -112,12 +112,27 @@ test-driven or test-alongside development approach:
 | **AudioClip** | Sample manipulation, metrics calculation, undo/redo state |
 | **AudioEngine** | Processing pipeline, trim, normalize, compress operations |
 | **Utility classes** | FileScanner patterns, path handling |
+| **Project/ClipState** | State management, serialization, per-clip tracking |
+| **Data models** | Any non-UI class that stores or transforms data |
+
+### CRITICAL: Test Data Models Even When Triggered by UI
+
+When UI code (dialogs, MainWindow, panels) modifies data models, the **data model 
+logic must still be tested**. Even if you can't test the UI interaction itself:
+
+1. **Test the data model methods** that the UI calls (e.g., `Project::updateClipState`)
+2. **Test scenarios** that match what the UI does (e.g., "apply normalize then compress")
+3. **Test edge cases** the UI might trigger (empty inputs, missing items, etc.)
+
+Example: If `MainWindow::onApplyTrim()` calls `project.updateClipState()`, write a 
+test that calls `updateClipState()` with the same parameters and verifies the result.
 
 ### What NOT to Test (in unit tests)
 
 - Qt widget rendering (use manual/integration testing)
 - Audio playback (requires audio hardware)
 - UI interactions (use Qt Test framework separately if needed)
+- Signal/slot connections (test the methods that slots call instead)
 
 ### Test File Location
 

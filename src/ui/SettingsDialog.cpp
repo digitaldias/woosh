@@ -10,6 +10,7 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -18,13 +19,24 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     : QDialog(parent)
 {
     setWindowTitle(tr("Settings"));
-    setMinimumWidth(350);
+    setMinimumWidth(400);
     setupUi();
 }
 
 void SettingsDialog::setupUi() {
     auto* mainLayout = new QVBoxLayout(this);
     mainLayout->setSpacing(16);
+
+    // --- Project Defaults section ---
+    auto* defaultsGroup = new QGroupBox(tr("Project Defaults"), this);
+    auto* defaultsLayout = new QFormLayout(defaultsGroup);
+
+    authorNameEdit_ = new QLineEdit(this);
+    authorNameEdit_->setPlaceholderText(tr("Your name or studio name"));
+    authorNameEdit_->setToolTip(tr("Default author name for new projects (used in MP3 metadata)"));
+    defaultsLayout->addRow(tr("Author Name:"), authorNameEdit_);
+
+    mainLayout->addWidget(defaultsGroup);
 
     // --- User Interface section ---
     auto* uiGroup = new QGroupBox(tr("User Interface"), this);
@@ -69,6 +81,14 @@ bool SettingsDialog::showColumnTooltips() const {
 
 void SettingsDialog::setShowColumnTooltips(bool show) {
     tooltipsCheck_->setChecked(show);
+}
+
+QString SettingsDialog::defaultAuthorName() const {
+    return authorNameEdit_->text().trimmed();
+}
+
+void SettingsDialog::setDefaultAuthorName(const QString& name) {
+    authorNameEdit_->setText(name);
 }
 
 void SettingsDialog::onClearHistoryClicked() {

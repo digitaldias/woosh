@@ -17,6 +17,7 @@
 
 #include "audio/AudioClip.h"
 #include "audio/AudioEngine.h"
+#include "core/ProjectManager.h"
 
 class QTableView;
 class QSortFilterProxyModel;
@@ -47,18 +48,31 @@ public:
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
+    void closeEvent(QCloseEvent* event) override;
 
 private Q_SLOTS:
-    // File menu actions
+    // Project menu actions
+    void newProject();
+    void openProject();
+    void saveProject();
+    void saveProjectAs();
+    void openRecentProject();
+    void openProjectSettings();
+    void openSettings();
+
+    // Legacy file actions (kept for backward compatibility)
     void openFiles();
     void openFolder();
     void openRecentFile();
     void openRecentFolder();
-    void openSettings();
 
-    // Processing actions
-    void onApplyToSelected(bool normalize, bool compress);
-    void onApplyToAll(bool normalize, bool compress);
+    // Processing actions - normalize
+    void onNormalizeSelected();
+    void onNormalizeAll();
+    
+    // Processing actions - compress
+    void onCompressSelected();
+    void onCompressAll();
 
     // Export actions
     void onExportSelected();
@@ -89,13 +103,24 @@ private Q_SLOTS:
     void onExportFinished();
     void onProcessingFinished();
 
+    // Project state changes
+    void onProjectChanged();
+    void onDirtyStateChanged(bool dirty);
+    void onRecentProjectsChanged();
+
 private:
     void setupUi();
     void setupMenus();
     void loadSettings();
     void saveSettings();
 
-    // Recent files/folders management
+    // Project management
+    void updateWindowTitle();
+    void updateRecentProjectsMenu();
+    bool maybeSaveProject();
+    void loadProjectClips();
+
+    // Recent files/folders management (legacy)
     void addRecentFile(const QString& path);
     void addRecentFolder(const QString& path);
     void updateRecentFilesMenu();
@@ -117,18 +142,31 @@ private:
     // --- Data ---
     AudioEngine engine_;
     std::vector<AudioClip> clips_;
+    ProjectManager projectManager_;
 
     // --- Async operations ---
     QFutureWatcher<std::vector<AudioClip>>* loadWatcher_ = nullptr;
     QFutureWatcher<int>* exportWatcher_ = nullptr;
     QFutureWatcher<std::vector<AudioClip>>* processWatcher_ = nullptr;
     std::vector<int> processingIndices_;  // Tracks which indices were processed
+    
+    // Processing state for async completion
+    bool processingAppliedNormalize_{false};
+    bool processingAppliedCompress_{false};
+    float processingNormalizeTarget_{0.0f};
+    float processingCompThreshold_{0.0f};
+    float processingCompRatio_{1.0f};
+    float processingCompAttackMs_{10.0f};
+    float processingCompReleaseMs_{100.0f};
+    float processingCompMakeupDb_{0.0f};
 
     // --- Settings ---
     QString lastOpenDirectory_;
+    QString defaultAuthorName_;
     QStringList recentFiles_;
     QStringList recentFolders_;
     std::unique_ptr<QSettings> settings_;
+    bool showColumnTooltips_{true};
 
     static constexpr int kMaxRecentItems = 10;
 
@@ -152,8 +190,14 @@ private:
     // Menus
     QMenu* recentFilesMenu_ = nullptr;
     QMenu* recentFoldersMenu_ = nullptr;
+    QMenu* recentProjectsMenu_ = nullptr;
 
     // Menu actions
+    QAction* newProjectAction_ = nullptr;
+    QAction* openProjectAction_ = nullptr;
+    QAction* saveProjectAction_ = nullptr;
+    QAction* saveProjectAsAction_ = nullptr;
+    QAction* projectSettingsAction_ = nullptr;
     QAction* openFilesAction_ = nullptr;
     QAction* openFolderAction_ = nullptr;
     QAction* settingsAction_ = nullptr;

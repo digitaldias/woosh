@@ -3,7 +3,7 @@
  * @brief Panel widget containing normalize and compressor controls with apply buttons.
  *
  * This panel provides input fields for normalization target and compressor parameters,
- * plus buttons to apply processing to selected clips or all clips.
+ * plus separate buttons to apply normalization or compression independently.
  */
 
 #pragma once
@@ -17,8 +17,8 @@ class QPushButton;
  * @class ProcessingPanel
  * @brief A grouped panel for audio processing controls (normalize, compress).
  *
- * Emits signals when the user clicks "Apply to Selected" or "Apply to All".
- * The parent (MainWindow) connects these signals to perform the actual processing.
+ * Emits signals when the user clicks normalize or compress buttons.
+ * Operations can be applied to selected clips or all clips independently.
  */
 class ProcessingPanel final : public QGroupBox {
     Q_OBJECT
@@ -52,28 +52,32 @@ public:
 
 Q_SIGNALS:
     /**
-     * @brief Emitted when user clicks "Apply to Selected".
-     * @param normalize If true, apply normalization.
-     * @param compress If true, apply compression.
+     * @brief Emitted when user clicks "Normalize Selected".
      */
-    void applyToSelected(bool normalize, bool compress);
+    void normalizeSelectedRequested();
 
     /**
-     * @brief Emitted when user clicks "Apply to All".
-     * @param normalize If true, apply normalization.
-     * @param compress If true, apply compression.
+     * @brief Emitted when user clicks "Normalize All".
      */
-    void applyToAll(bool normalize, bool compress);
+    void normalizeAllRequested();
 
-private Q_SLOTS:
-    void onApplySelectedClicked();
-    void onApplyAllClicked();
+    /**
+     * @brief Emitted when user clicks "Compress Selected".
+     */
+    void compressSelectedRequested();
+
+    /**
+     * @brief Emitted when user clicks "Compress All".
+     */
+    void compressAllRequested();
 
 private:
     void setupUi();
 
     // Normalize controls
     QLineEdit* normalizeTargetEdit_ = nullptr;
+    QPushButton* normalizeSelectedBtn_ = nullptr;
+    QPushButton* normalizeAllBtn_ = nullptr;
 
     // Compressor controls
     QLineEdit* thresholdEdit_ = nullptr;
@@ -81,9 +85,7 @@ private:
     QLineEdit* attackEdit_ = nullptr;
     QLineEdit* releaseEdit_ = nullptr;
     QLineEdit* makeupEdit_ = nullptr;
-
-    // Apply buttons
-    QPushButton* applySelectedBtn_ = nullptr;
-    QPushButton* applyAllBtn_ = nullptr;
+    QPushButton* compressSelectedBtn_ = nullptr;
+    QPushButton* compressAllBtn_ = nullptr;
 };
 

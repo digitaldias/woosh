@@ -22,8 +22,12 @@ void ProcessingPanel::setupUi() {
     auto* mainLayout = new QVBoxLayout(this);
 
     // --- Normalize section ---
+    auto* normLabel = new QLabel(tr("<b>Normalize</b>"), this);
+    mainLayout->addWidget(normLabel);
+
     auto* normLayout = new QHBoxLayout();
-    normLayout->addWidget(new QLabel(tr("Normalize target:"), this));
+    normLayout->setContentsMargins(10, 0, 0, 0);
+    normLayout->addWidget(new QLabel(tr("Target:"), this));
     normalizeTargetEdit_ = new QLineEdit("-1.0", this);
     normalizeTargetEdit_->setToolTip(tr("Target peak level in dBFS (e.g., -1.0)"));
     normalizeTargetEdit_->setFixedWidth(60);
@@ -32,6 +36,20 @@ void ProcessingPanel::setupUi() {
     normLayout->addStretch();
     mainLayout->addLayout(normLayout);
 
+    // Normalize buttons
+    auto* normBtnLayout = new QHBoxLayout();
+    normBtnLayout->setContentsMargins(10, 0, 0, 0);
+    normalizeSelectedBtn_ = new QPushButton(tr("Normalize Selected"), this);
+    normalizeSelectedBtn_->setToolTip(tr("Normalize selected clips to target level"));
+    normBtnLayout->addWidget(normalizeSelectedBtn_);
+    normalizeAllBtn_ = new QPushButton(tr("Normalize All"), this);
+    normalizeAllBtn_->setToolTip(tr("Normalize all clips to target level"));
+    normBtnLayout->addWidget(normalizeAllBtn_);
+    normBtnLayout->addStretch();
+    mainLayout->addLayout(normBtnLayout);
+
+    mainLayout->addSpacing(10);
+
     // --- Compressor section ---
     auto* compLabel = new QLabel(tr("<b>Compressor</b>"), this);
     mainLayout->addWidget(compLabel);
@@ -39,12 +57,12 @@ void ProcessingPanel::setupUi() {
     auto* compForm = new QFormLayout();
     compForm->setContentsMargins(10, 0, 0, 0);
 
-    thresholdEdit_ = new QLineEdit("-6.0", this);
+    thresholdEdit_ = new QLineEdit("-12.0", this);
     thresholdEdit_->setToolTip(tr("Threshold in dB where compression begins"));
     thresholdEdit_->setFixedWidth(60);
     compForm->addRow(tr("Threshold (dB):"), thresholdEdit_);
 
-    ratioEdit_ = new QLineEdit("2.0", this);
+    ratioEdit_ = new QLineEdit("4.0", this);
     ratioEdit_->setToolTip(tr("Compression ratio (e.g., 4.0 means 4:1)"));
     ratioEdit_->setFixedWidth(60);
     compForm->addRow(tr("Ratio:"), ratioEdit_);
@@ -54,7 +72,7 @@ void ProcessingPanel::setupUi() {
     attackEdit_->setFixedWidth(60);
     compForm->addRow(tr("Attack (ms):"), attackEdit_);
 
-    releaseEdit_ = new QLineEdit("80.0", this);
+    releaseEdit_ = new QLineEdit("100.0", this);
     releaseEdit_->setToolTip(tr("Release time in milliseconds"));
     releaseEdit_->setFixedWidth(60);
     compForm->addRow(tr("Release (ms):"), releaseEdit_);
@@ -66,23 +84,23 @@ void ProcessingPanel::setupUi() {
 
     mainLayout->addLayout(compForm);
 
-    // --- Apply buttons ---
-    mainLayout->addSpacing(10);
-
-    auto* btnLayout = new QHBoxLayout();
-    applySelectedBtn_ = new QPushButton(tr("Apply to Selected"), this);
-    applySelectedBtn_->setToolTip(tr("Apply normalize and compress to selected clips"));
-    btnLayout->addWidget(applySelectedBtn_);
-
-    applyAllBtn_ = new QPushButton(tr("Apply to All"), this);
-    applyAllBtn_->setToolTip(tr("Apply normalize and compress to all loaded clips"));
-    btnLayout->addWidget(applyAllBtn_);
-
-    mainLayout->addLayout(btnLayout);
+    // Compress buttons
+    auto* compBtnLayout = new QHBoxLayout();
+    compBtnLayout->setContentsMargins(10, 0, 0, 0);
+    compressSelectedBtn_ = new QPushButton(tr("Compress Selected"), this);
+    compressSelectedBtn_->setToolTip(tr("Apply compression to selected clips"));
+    compBtnLayout->addWidget(compressSelectedBtn_);
+    compressAllBtn_ = new QPushButton(tr("Compress All"), this);
+    compressAllBtn_->setToolTip(tr("Apply compression to all clips"));
+    compBtnLayout->addWidget(compressAllBtn_);
+    compBtnLayout->addStretch();
+    mainLayout->addLayout(compBtnLayout);
 
     // --- Connections ---
-    connect(applySelectedBtn_, &QPushButton::clicked, this, &ProcessingPanel::onApplySelectedClicked);
-    connect(applyAllBtn_, &QPushButton::clicked, this, &ProcessingPanel::onApplyAllClicked);
+    connect(normalizeSelectedBtn_, &QPushButton::clicked, this, &ProcessingPanel::normalizeSelectedRequested);
+    connect(normalizeAllBtn_, &QPushButton::clicked, this, &ProcessingPanel::normalizeAllRequested);
+    connect(compressSelectedBtn_, &QPushButton::clicked, this, &ProcessingPanel::compressSelectedRequested);
+    connect(compressAllBtn_, &QPushButton::clicked, this, &ProcessingPanel::compressAllRequested);
 }
 
 double ProcessingPanel::normalizeTarget() const {
@@ -94,13 +112,13 @@ double ProcessingPanel::normalizeTarget() const {
 float ProcessingPanel::compThreshold() const {
     bool ok = false;
     float val = thresholdEdit_->text().toFloat(&ok);
-    return ok ? val : -6.0f;
+    return ok ? val : -12.0f;
 }
 
 float ProcessingPanel::compRatio() const {
     bool ok = false;
     float val = ratioEdit_->text().toFloat(&ok);
-    return ok ? val : 2.0f;
+    return ok ? val : 4.0f;
 }
 
 float ProcessingPanel::compAttackMs() const {
@@ -112,22 +130,12 @@ float ProcessingPanel::compAttackMs() const {
 float ProcessingPanel::compReleaseMs() const {
     bool ok = false;
     float val = releaseEdit_->text().toFloat(&ok);
-    return ok ? val : 80.0f;
+    return ok ? val : 100.0f;
 }
 
 float ProcessingPanel::compMakeupDb() const {
     bool ok = false;
     float val = makeupEdit_->text().toFloat(&ok);
     return ok ? val : 0.0f;
-}
-
-void ProcessingPanel::onApplySelectedClicked() {
-    // For now, always apply both normalize and compress
-    // Could add checkboxes later to enable/disable each
-    Q_EMIT applyToSelected(true, true);
-}
-
-void ProcessingPanel::onApplyAllClicked() {
-    Q_EMIT applyToAll(true, true);
 }
 
