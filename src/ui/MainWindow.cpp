@@ -125,7 +125,7 @@ void MainWindow::setupUi() {
     auto* splitter = new QSplitter(Qt::Horizontal, central);
 
     // Left pane: Clip table
-    clipModel_ = new ClipTableModel(clips_, this);
+    clipModel_ = new ClipTableModel(clips_, projectManager_, this);
     proxyModel_ = new QSortFilterProxyModel(this);
     proxyModel_->setSourceModel(clipModel_);
     proxyModel_->setSortRole(Qt::UserRole);

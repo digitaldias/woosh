@@ -4,8 +4,12 @@
  */
 
 #include "ClipTableModel.h"
+#include "core/ProjectManager.h"
 #include <QFileInfo>
 #include <QSettings>
+#include <QBrush>
+#include <QColor>
+#include <filesystem>
 
 namespace {
     constexpr const char* kSettingsOrg = "Woosh";
@@ -13,9 +17,12 @@ namespace {
     constexpr const char* kKeyShowTooltips = "UI/ShowColumnTooltips";
 }
 
-ClipTableModel::ClipTableModel(std::vector<AudioClip>& clips, QObject* parent)
+ClipTableModel::ClipTableModel(std::vector<AudioClip>& clips, 
+                               ProjectManager& projectManager,
+                               QObject* parent)
     : QAbstractTableModel(parent)
     , clips_(clips)
+    , projectManager_(projectManager)
 {
     // Load tooltip preference
     QSettings settings(kSettingsOrg, kSettingsApp);
@@ -37,6 +44,26 @@ QVariant ClipTableModel::data(const QModelIndex& index, int role) const {
     if (index.row() < 0 || index.row() >= static_cast<int>(clips_.size())) return {};
 
     const auto& clip = clips_[static_cast<size_t>(index.row())];
+    
+    // Get clip state from project
+    const ClipState* clipState = nullptr;
+    if (projectManager_.hasProject()) {
+        // Build relative path from clip path
+        const std::string& clipPath = clip.filePath();
+        const std::string& rawFolder = projectManager_.project().rawFolder();
+        std::string relativePath;
+        
+        if (!rawFolder.empty()) {
+            std::filesystem::path clipFsPath(clipPath);
+            std::filesystem::path rawFsPath(rawFolder);
+            auto relPath = std::filesystem::relative(clipFsPath, rawFsPath);
+            relativePath = relPath.string();
+        } else {
+            relativePath = std::filesystem::path(clipPath).filename().string();
+        }
+        
+        clipState = projectManager_.project().findClipState(relativePath);
+    }
 
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
@@ -52,6 +79,15 @@ QVariant ClipTableModel::data(const QModelIndex& index, int role) const {
                 return QString::number(clip.peakDb(), 'f', 2);
             case ColRmsDb:
                 return QString::number(clip.rmsDb(), 'f', 2);
+            case ColStatus: {
+                if (!clipState) return QString();
+                QString status;
+                if (clipState->isTrimmed) status += "T";
+                if (clipState->isNormalized) status += "N";
+                if (clipState->isCompressed) status += "C";
+                if (clipState->isExported) status += "E";
+                return status;
+            }
             default:
                 return {};
         }
@@ -72,6 +108,16 @@ QVariant ClipTableModel::data(const QModelIndex& index, int role) const {
                 return static_cast<double>(clip.peakDb());
             case ColRmsDb:
                 return static_cast<double>(clip.rmsDb());
+            case ColStatus: {
+                // Sort by number of operations applied
+                if (!clipState) return 0;
+                int count = 0;
+                if (clipState->isTrimmed) count++;
+                if (clipState->isNormalized) count++;
+                if (clipState->isCompressed) count++;
+                if (clipState->isExported) count++;
+                return count;
+            }
             default:
                 return {};
         }
@@ -79,10 +125,72 @@ QVariant ClipTableModel::data(const QModelIndex& index, int role) const {
 
     // Text alignment: right-align numeric columns
     if (role == Qt::TextAlignmentRole) {
-        if (index.column() != ColName) {
-            return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
+        if (index.column() == ColName) {
+            return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
         }
-        return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
+        if (index.column() == ColStatus) {
+            return static_cast<int>(Qt::AlignCenter | Qt::AlignVCenter);
+        }
+        return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
+    }
+    
+    // Tooltip for status column
+    if (role == Qt::ToolTipRole && index.column() == ColStatus) {
+        if (!clipState) {
+            return tr("No processing applied");
+        }
+        
+        QStringList operations;
+        
+        if (clipState->isTrimmed) {
+            operations << tr("Trimmed: %1s - %2s")
+                          .arg(clipState->trimStartSec, 0, 'f', 3)
+                          .arg(clipState->trimEndSec, 0, 'f', 3);
+        }
+        
+        if (clipState->isNormalized) {
+            operations << tr("Normalized: %1 dB")
+                          .arg(clipState->normalizeTargetDb, 0, 'f', 1);
+        }
+        
+        if (clipState->isCompressed) {
+            const auto& cs = clipState->compressorSettings;
+            operations << tr("Compressed: %1 dB, %2:1, %3/%4ms, +%5 dB")
+                          .arg(cs.threshold, 0, 'f', 1)
+                          .arg(cs.ratio, 0, 'f', 1)
+                          .arg(cs.attackMs, 0, 'f', 0)
+                          .arg(cs.releaseMs, 0, 'f', 0)
+                          .arg(cs.makeupDb, 0, 'f', 1);
+        }
+        
+        if (clipState->isExported) {
+            operations << tr("Exported: %1")
+                          .arg(QString::fromStdString(clipState->exportedFilename));
+        }
+        
+        if (operations.isEmpty()) {
+            return tr("No processing applied");
+        }
+        
+        return operations.join("\n");
+    }
+    
+    // Background color for modified rows
+    if (role == Qt::BackgroundRole) {
+        if (clipState) {
+            bool hasModifications = clipState->isTrimmed || clipState->isNormalized || 
+                                   clipState->isCompressed;
+            bool isExported = clipState->isExported;
+            
+            if (isExported) {
+                // Light green for exported clips
+                return QBrush(QColor(200, 255, 200, 50));
+            } else if (hasModifications) {
+                // Light yellow for modified but not exported
+                return QBrush(QColor(255, 255, 200, 50));
+            }
+        }
+        return {};
     }
 
     return {};
@@ -101,6 +209,7 @@ QVariant ClipTableModel::headerData(int section, Qt::Orientation orientation, in
             case ColChannels:   return tr("Ch");
             case ColPeakDb:     return tr("Peak dB");
             case ColRmsDb:      return tr("RMS dB");
+            case ColStatus:     return tr("Status");
             default:            return {};
         }
     }
@@ -129,6 +238,14 @@ QVariant ClipTableModel::headerData(int section, Qt::Orientation orientation, in
                           "of the audio over time. More representative of\n"
                           "perceived loudness than peak level.\n"
                           "Typical values: -20 to -10 dB for normal audio.");
+            case ColStatus:
+                return tr("Processing Status\n\n"
+                          "Shows which operations have been applied:\n"
+                          "  T = Trimmed\n"
+                          "  N = Normalized\n"
+                          "  C = Compressed\n"
+                          "  E = Exported\n\n"
+                          "Hover over a status to see detailed parameters.");
             default:
                 return {};
         }

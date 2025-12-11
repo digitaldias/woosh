@@ -3,7 +3,7 @@
  * @brief Table model for displaying audio clips with sortable columns.
  *
  * This model exposes clip metadata (name, duration, sample rate, channels,
- * peak dB, RMS dB) as columns in a QTableView. Works with QSortFilterProxyModel
+ * peak dB, RMS dB, status) as columns in a QTableView. Works with QSortFilterProxyModel
  * for sorting support.
  */
 
@@ -12,6 +12,8 @@
 #include <QAbstractTableModel>
 #include <vector>
 #include "audio/AudioClip.h"
+
+class ProjectManager;
 
 /**
  * @class ClipTableModel
@@ -24,6 +26,7 @@
  *  3 - Channels
  *  4 - Peak (dBFS)
  *  5 - RMS (dB)
+ *  6 - Status (processing state: T=Trimmed, N=Normalized, C=Compressed, E=Exported)
  */
 class ClipTableModel : public QAbstractTableModel {
     Q_OBJECT
@@ -37,15 +40,19 @@ public:
         ColChannels,
         ColPeakDb,
         ColRmsDb,
+        ColStatus,
         ColCount  ///< Number of columns
     };
 
     /**
      * @brief Construct the model with a reference to the clips vector.
      * @param clips Reference to the vector of AudioClip objects.
+     * @param projectManager Reference to the project manager for clip state queries.
      * @param parent Optional parent QObject.
      */
-    explicit ClipTableModel(std::vector<AudioClip>& clips, QObject* parent = nullptr);
+    explicit ClipTableModel(std::vector<AudioClip>& clips, 
+                            ProjectManager& projectManager,
+                            QObject* parent = nullptr);
 
     // --- QAbstractTableModel overrides ---
 
@@ -73,5 +80,6 @@ public:
 
 private:
     std::vector<AudioClip>& clips_;
+    ProjectManager& projectManager_;
     bool showTooltips_ = true;
 };

@@ -87,6 +87,122 @@ static void testClipState_setExported() {
 }
 
 // ============================================================================
+// ClipState status badge generation tests
+// ============================================================================
+
+// Helper function that mirrors the logic in ClipTableModel::data() for status badges
+static std::string buildStatusBadge(const ClipState& state) {
+    std::string status;
+    if (state.isTrimmed) status += "T";
+    if (state.isNormalized) status += "N";
+    if (state.isCompressed) status += "C";
+    if (state.isExported) status += "E";
+    return status;
+}
+
+// Helper function that mirrors the logic in ClipTableModel::data() for sort value
+static int countOperations(const ClipState& state) {
+    int count = 0;
+    if (state.isTrimmed) count++;
+    if (state.isNormalized) count++;
+    if (state.isCompressed) count++;
+    if (state.isExported) count++;
+    return count;
+}
+
+static void testClipState_statusBadge_noOperations() {
+    ClipState state;
+    state.relativePath = "test.wav";
+    
+    assert(buildStatusBadge(state).empty());
+    assert(countOperations(state) == 0);
+}
+
+static void testClipState_statusBadge_trimmedOnly() {
+    ClipState state;
+    state.isTrimmed = true;
+    
+    assert(buildStatusBadge(state) == "T");
+    assert(countOperations(state) == 1);
+}
+
+static void testClipState_statusBadge_normalizedOnly() {
+    ClipState state;
+    state.isNormalized = true;
+    
+    assert(buildStatusBadge(state) == "N");
+    assert(countOperations(state) == 1);
+}
+
+static void testClipState_statusBadge_compressedOnly() {
+    ClipState state;
+    state.isCompressed = true;
+    
+    assert(buildStatusBadge(state) == "C");
+    assert(countOperations(state) == 1);
+}
+
+static void testClipState_statusBadge_exportedOnly() {
+    ClipState state;
+    state.isExported = true;
+    
+    assert(buildStatusBadge(state) == "E");
+    assert(countOperations(state) == 1);
+}
+
+static void testClipState_statusBadge_multipleOperations() {
+    ClipState state;
+    state.isTrimmed = true;
+    state.isNormalized = true;
+    state.isCompressed = true;
+    
+    // Order should be T, N, C, E
+    assert(buildStatusBadge(state) == "TNC");
+    assert(countOperations(state) == 3);
+}
+
+static void testClipState_statusBadge_allOperations() {
+    ClipState state;
+    state.isTrimmed = true;
+    state.isNormalized = true;
+    state.isCompressed = true;
+    state.isExported = true;
+    
+    assert(buildStatusBadge(state) == "TNCE");
+    assert(countOperations(state) == 4);
+}
+
+static void testClipState_statusBadge_commonWorkflow_normalizeAndExport() {
+    // Common workflow: normalize then export
+    ClipState state;
+    state.isNormalized = true;
+    state.normalizeTargetDb = -1.0;
+    state.isExported = true;
+    state.exportedFilename = "output.mp3";
+    
+    assert(buildStatusBadge(state) == "NE");
+    assert(countOperations(state) == 2);
+}
+
+static void testClipState_statusBadge_commonWorkflow_fullProcessing() {
+    // Full processing workflow: trim, normalize, compress, export
+    ClipState state;
+    state.isTrimmed = true;
+    state.trimStartSec = 0.1;
+    state.trimEndSec = 2.5;
+    state.isNormalized = true;
+    state.normalizeTargetDb = -1.0;
+    state.isCompressed = true;
+    state.compressorSettings.threshold = -12.0f;
+    state.compressorSettings.ratio = 4.0f;
+    state.isExported = true;
+    state.exportedFilename = "processed.mp3";
+    
+    assert(buildStatusBadge(state) == "TNCE");
+    assert(countOperations(state) == 4);
+}
+
+// ============================================================================
 // ExportSettings tests
 // ============================================================================
 
@@ -667,6 +783,17 @@ int main() {
     testClipState_setCompressed();
     testClipState_setTrimmed();
     testClipState_setExported();
+    
+    // ClipState status badge tests (for UI Status column)
+    testClipState_statusBadge_noOperations();
+    testClipState_statusBadge_trimmedOnly();
+    testClipState_statusBadge_normalizedOnly();
+    testClipState_statusBadge_compressedOnly();
+    testClipState_statusBadge_exportedOnly();
+    testClipState_statusBadge_multipleOperations();
+    testClipState_statusBadge_allOperations();
+    testClipState_statusBadge_commonWorkflow_normalizeAndExport();
+    testClipState_statusBadge_commonWorkflow_fullProcessing();
     
     // ExportSettings tests
     testExportSettings_defaultConstruction();
