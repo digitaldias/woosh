@@ -158,6 +158,8 @@ void AudioPlayer::seek(int frame) {
     }
 
     Q_EMIT positionChanged(positionFrame_);
+
+    calculateLevels();
 }
 
 void AudioPlayer::setPlaybackRegion(int startFrame, int endFrame) {
@@ -341,4 +343,90 @@ void AudioPlayer::updatePosition() {
     positionFrame_ = regionStartFrame_ + frameOffset;
 
     Q_EMIT positionChanged(positionFrame_);
+
+    calculateLevels();
+}
+
+void AudioPlayer::calculateLevels() {
+    if (!clip_) {
+        Q_EMIT levelsChanged(0.0f, 0.0f);
+        return;
+    }
+
+    const auto& samples = clip_->samples();
+    if (samples.empty()) {
+        Q_EMIT levelsChanged(0.0f, 0.0f);
+        return;
+    }
+
+    const int channels = clip_->channels();
+    if (channels <= 0) {
+        Q_EMIT levelsChanged(0.0f, 0.0f);
+        return;
+    }
+
+    const int sampleRate = clip_->sampleRate();
+    if (sampleRate <= 0) {
+        Q_EMIT levelsChanged(0.0f, 0.0f);
+        return;
+    }
+
+    const int maxFrame = static_cast<int>(clip_->frameCount());
+    if (maxFrame <= 0) {
+        Q_EMIT levelsChanged(0.0f, 0.0f);
+        return;
+    }
+
+    // Analysis window of ~20 ms
+    const int windowFrames = std::max(1, sampleRate / 50);
+
+    // Effective playback region
+    const int effectiveEnd = (regionEndFrame_ > 0)
+        ? std::min(regionEndFrame_, maxFrame)
+        : maxFrame;
+
+    if (positionFrame_ < regionStartFrame_ || positionFrame_ > effectiveEnd) {
+        Q_EMIT levelsChanged(0.0f, 0.0f);
+        return;
+    }
+
+    int startFrame = positionFrame_ - windowFrames / 2;
+    int endFrame = positionFrame_ + windowFrames / 2;
+
+    startFrame = std::max(regionStartFrame_, startFrame);
+    endFrame = std::min(effectiveEnd, endFrame);
+    if (endFrame <= startFrame) {
+        Q_EMIT levelsChanged(0.0f, 0.0f);
+        return;
+    }
+
+    const size_t startSample = static_cast<size_t>(startFrame) * static_cast<size_t>(channels);
+    const size_t endSample = static_cast<size_t>(endFrame) * static_cast<size_t>(channels);
+    if (startSample >= samples.size()) {
+        Q_EMIT levelsChanged(0.0f, 0.0f);
+        return;
+    }
+
+    float leftPeak = 0.0f;
+    float rightPeak = 0.0f;
+
+    for (size_t i = startSample; i + static_cast<size_t>(channels) <= samples.size() && i < endSample;
+         i += static_cast<size_t>(channels)) {
+        const float sL = std::fabs(samples[i]);
+        leftPeak = std::max(leftPeak, sL);
+
+        if (channels > 1) {
+            const float sR = std::fabs(samples[i + 1]);
+            rightPeak = std::max(rightPeak, sR);
+        }
+    }
+
+    if (channels == 1) {
+        rightPeak = leftPeak;
+    }
+
+    leftPeak = std::clamp(leftPeak, 0.0f, 1.0f);
+    rightPeak = std::clamp(rightPeak, 0.0f, 1.0f);
+
+    Q_EMIT levelsChanged(leftPeak, rightPeak);
 }

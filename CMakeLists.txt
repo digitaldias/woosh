@@ -109,6 +109,7 @@ set(WOOSH_SOURCES
   ${SRC_ROOT}/ui/TransportPanel.cpp
   ${SRC_ROOT}/ui/WaveformView.cpp
   ${SRC_ROOT}/ui/SettingsDialog.cpp
+  ${SRC_ROOT}/ui/VuMeterWidget.cpp
   # Audio core
   ${SRC_ROOT}/audio/AudioEngine.cpp
   ${SRC_ROOT}/audio/AudioClip.cpp

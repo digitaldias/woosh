@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QItemSelection>
 #include <QKeyEvent>
@@ -34,6 +35,7 @@
 #include "ui/SettingsDialog.h"
 #include "ui/TransportPanel.h"
 #include "ui/WaveformView.h"
+#include "ui/VuMeterWidget.h"
 #include "utils/FileScanner.h"
 
 // Application settings keys
@@ -143,8 +145,19 @@ void MainWindow::setupUi() {
     connect(transportPanel_, &TransportPanel::zoomFitClicked, waveformView_, &WaveformView::zoomToFit);
     connect(transportPanel_, &TransportPanel::applyTrimClicked, this, &MainWindow::onApplyTrim);
 
-    processingPanel_ = new ProcessingPanel(rightPane);
-    rightLayout->addWidget(processingPanel_);
+    // Processing + VU meter side by side
+    auto* processingRow = new QWidget(rightPane);
+    auto* processingRowLayout = new QHBoxLayout(processingRow);
+    processingRowLayout->setContentsMargins(0, 0, 0, 0);
+    processingRowLayout->setSpacing(4);
+
+    processingPanel_ = new ProcessingPanel(processingRow);
+    processingRowLayout->addWidget(processingPanel_, 1);
+
+    vuMeter_ = new VuMeterWidget(processingRow);
+    processingRowLayout->addWidget(vuMeter_, 0);
+
+    rightLayout->addWidget(processingRow);
 
     connect(processingPanel_, &ProcessingPanel::applyToSelected, this, &MainWindow::onApplyToSelected);
     connect(processingPanel_, &ProcessingPanel::applyToAll, this, &MainWindow::onApplyToAll);
@@ -187,6 +200,11 @@ void MainWindow::setupUi() {
     connect(audioPlayer_, &AudioPlayer::stateChanged, this, [this](AudioPlayer::State state) {
         transportPanel_->setPlaying(state == AudioPlayer::State::Playing);
     });
+
+    if (vuMeter_) {
+        connect(audioPlayer_, &AudioPlayer::levelsChanged,
+                vuMeter_, &VuMeterWidget::setLevels);
+    }
 
     QByteArray geom = settings_->value(kKeyWindowGeom).toByteArray();
     if (!geom.isEmpty()) {

@@ -31,6 +31,7 @@ class ProcessingPanel;
 class OutputPanel;
 class TransportPanel;
 class WaveformView;
+class VuMeterWidget;
 
 /**
  * @class MainWindow
@@ -128,6 +129,7 @@ private:
     TransportPanel* transportPanel_ = nullptr;
     ProcessingPanel* processingPanel_ = nullptr;
     OutputPanel* outputPanel_ = nullptr;
+    VuMeterWidget* vuMeter_ = nullptr;
 
     QLabel* statusLabel_ = nullptr;
     QProgressBar* progressBar_ = nullptr;

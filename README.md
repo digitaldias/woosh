@@ -19,24 +19,68 @@ A Qt 6 desktop utility for game audio teams to batch-trim, normalize, and lightl
 - More robust test coverage and headless pipelines.
 
 ## Dependencies
-Built with CMake and vcpkg (assumes `vcpkg integrate install` already run).
 
-```
-vcpkg install qtbase qttools qt6-multimedia libsndfile mpg123
-```
+Woosh uses CMake, a standalone Qt 6 install, and vcpkg for the audio
+dependencies.
 
-Triplet: `x64-windows` (adjust as needed).
+- **Qt 6**: Install Qt 6 with the **MSVC 2022 64-bit** kit, e.g. to
+  `C:\Qt\6.10.1\msvc2022_64`. Make sure this path matches the
+  `CMAKE_PREFIX_PATH` used in `CMakePresets.json` (by default
+  `C:/Qt/6.10.1/msvc2022_64`).
+- **vcpkg**: Used for audio libraries only.
+  - `vcpkg.json` in the repo declares:
+    - `libsndfile`
+    - `mpg123` (without default features)
+  - Triplet: `x64-windows`.
+  - Either enable `vcpkg integrate install` or set `VCPKG_ROOT` so that
+    CMake/vcpkg can find the toolchain file
+    (`%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake`).
+
+You generally don’t need to run `vcpkg install` manually if your environment
+is configured to auto-restore from `vcpkg.json`, but you can run it from the
+repo root if necessary.
 
 ## Building
-```
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug ^
-  -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake
-cmake --build build --config Debug
+
+Woosh is configured for a **preset-based CMake workflow** that works well with
+Visual Studio 2022/2026 and the Qt install in `C:\Qt`.
+
+### Option 1: CMake presets (CLI)
+
+From the repository root:
+
+```bash
+# Configure Debug
+cmake --preset x64-debug
+
+# Build Debug
+cmake --build --preset x64-debug
+
+# Configure Release
+cmake --preset x64-release
+
+# Build Release
+cmake --build --preset x64-release
 ```
 
+The presets in `CMakePresets.json` use the `Visual Studio 17 2022` generator,
+set the vcpkg toolchain file from `VCPKG_ROOT`, configure the target triplet
+`x64-windows`, and point `CMAKE_PREFIX_PATH` at your Qt install
+(`C:/Qt/6.10.1/msvc2022_64` by default).
+
+### Option 2: Visual Studio 2022 / 2026
+
+1. Open the folder in Visual Studio.
+2. VS picks up `CMakePresets.json` automatically.
+3. Select a CMake configuration such as `x64-Debug` or `x64-Release`.
+4. Build the `Woosh` target from the CMake Targets view.
+
 Notes:
-- Ensure `VCPKG_ROOT` is set; CMake will auto-detect if already integrated.
-- On Windows, `Woosh` is built as a GUI (no console). Use `windeployqt` later for redistribution.
+- Ensure `VCPKG_ROOT` is set or vcpkg is integrated so the toolchain file
+  resolves correctly.
+- On Windows, `Woosh` is built as a GUI application (no console). The CMake
+  build integrates `windeployqt` to copy required Qt DLLs after building,
+  as long as the tool is found in your Qt installation.
 
 ## Running
 - From CMake build dir: `build\Debug\Woosh.exe` (or `Release`).
@@ -44,10 +88,19 @@ Notes:
 - Exported files are saved alongside originals with `_woosh` suffix by default.
 
 ## Tests
-Simple assert-style tests (no external framework):
-```
-cmake --build build --config Debug --target WooshTests
-ctest --test-dir build
+
+Woosh has simple assert-style tests compiled into the `WooshTests` executable.
+
+Using CMake presets:
+
+```bash
+# Debug tests
+cmake --build --preset x64-debug --target WooshTests
+ctest --preset x64-debug
+
+# Release tests
+cmake --build --preset x64-release --target WooshTests
+ctest --preset x64-release
 ```
 
 ## Limitations (current)

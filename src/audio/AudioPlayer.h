@@ -122,6 +122,13 @@ Q_SIGNALS:
      */
     void finished();
 
+    /**
+     * @brief Emitted periodically during playback with current audio levels.
+     * @param left Left channel level (0.0 - 1.0 linear).
+     * @param right Right channel level (0.0 - 1.0 linear).
+     */
+    void levelsChanged(float left, float right);
+
 private Q_SLOTS:
     void onAudioStateChanged(int state);
     void updatePosition();
@@ -130,6 +137,7 @@ private:
     void setupAudioOutput();
     void prepareBuffer();
     void cleanupAudioOutput();
+    void calculateLevels();
 
     AudioClip* clip_ = nullptr;
     State state_ = State::Stopped;
