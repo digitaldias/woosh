@@ -909,6 +909,16 @@ void MainWindow::onLoadingFinished() {
     int loaded = static_cast<int>(loadedClips.size());
 
     for (auto& clip : loadedClips) {
+        // Register clip with project if we have one
+        if (projectManager_.hasProject()) {
+            std::string relativePath = clip.displayName();
+            // Only add if not already tracked
+            if (!projectManager_.project().findClipState(relativePath)) {
+                ClipState state;
+                state.relativePath = relativePath;
+                projectManager_.project().addClipState(state);
+            }
+        }
         clips_.push_back(std::move(clip));
     }
 
