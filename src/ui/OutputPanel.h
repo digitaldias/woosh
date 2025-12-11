@@ -1,9 +1,9 @@
 /**
  * @file OutputPanel.h
- * @brief Panel widget for output folder selection and export controls.
+ * @brief Panel widget for output folder display and export controls.
  *
- * Provides an output folder picker, an option to overwrite original files,
- * and buttons to export selected or all clips.
+ * Displays the output folder (configured via project), an option to overwrite 
+ * original files, and buttons to export selected or all clips.
  */
 
 #pragma once
@@ -11,7 +11,7 @@
 #include <QGroupBox>
 #include <QString>
 
-class QLineEdit;
+class QLabel;
 class QPushButton;
 class QCheckBox;
 
@@ -21,6 +21,7 @@ class QCheckBox;
  *
  * Emits signals when the user clicks "Export Selected" or "Export All".
  * The parent (MainWindow) handles the actual export logic.
+ * The output folder is displayed as read-only (set from project settings).
  */
 class OutputPanel final : public QGroupBox {
     Q_OBJECT
@@ -33,13 +34,13 @@ public:
     explicit OutputPanel(QWidget* parent = nullptr);
 
     /**
-     * @brief Get the currently selected output folder path.
+     * @brief Get the currently displayed output folder path.
      * @return The output folder path, or empty string if not set.
      */
     [[nodiscard]] QString outputFolder() const;
 
     /**
-     * @brief Set the output folder path.
+     * @brief Set the output folder path (read-only display).
      * @param path The folder path to display.
      */
     void setOutputFolder(const QString& path);
@@ -61,20 +62,11 @@ Q_SIGNALS:
      */
     void exportAll();
 
-    /**
-     * @brief Emitted when the output folder changes.
-     * @param newPath The new output folder path.
-     */
-    void outputFolderChanged(const QString& newPath);
-
-private Q_SLOTS:
-    void onBrowseClicked();
-
 private:
     void setupUi();
 
-    QLineEdit* folderEdit_ = nullptr;
-    QPushButton* browseBtn_ = nullptr;
+    QLabel* folderLabel_ = nullptr;
+    QString outputFolder_;
     QCheckBox* overwriteCheck_ = nullptr;
     QPushButton* exportSelectedBtn_ = nullptr;
     QPushButton* exportAllBtn_ = nullptr;

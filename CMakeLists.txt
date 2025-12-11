@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.21)
-project(Woosh VERSION 0.2.0 LANGUAGES CXX)
+project(Woosh VERSION 1.0.0 LANGUAGES CXX)
 
 # ============================================================================
 # Version and Product Information
@@ -111,6 +111,7 @@ set(WOOSH_SOURCES
   ${SRC_ROOT}/ui/ProcessingPanel.cpp
   ${SRC_ROOT}/ui/OutputPanel.cpp
   ${SRC_ROOT}/ui/TransportPanel.cpp
+  ${SRC_ROOT}/ui/ToggleSwitch.cpp
   ${SRC_ROOT}/ui/WaveformView.cpp
   ${SRC_ROOT}/ui/SettingsDialog.cpp
   ${SRC_ROOT}/ui/VuMeterWidget.cpp
@@ -128,6 +129,14 @@ set(WOOSH_SOURCES
   ${SRC_ROOT}/utils/DSP.cpp
   # Resources
   ${SRC_ROOT}/resources/woosh.qrc
+)
+
+set(WOOSH_TEST_SOURCES
+  ${SRC_ROOT}/tests/AudioClipTests.cpp
+  ${SRC_ROOT}/tests/AudioEngineTests.cpp
+  ${SRC_ROOT}/tests/ProjectTests.cpp
+  ${SRC_ROOT}/tests/DSPTests.cpp
+  ${SRC_ROOT}/tests/WaveformViewHelpersTests.cpp
 )
 
 # ============================================================================
@@ -289,8 +298,20 @@ target_include_directories(ProjectTests PRIVATE
 target_link_libraries(ProjectTests PRIVATE)
 add_test(NAME ProjectTests COMMAND ProjectTests)
 
+# --- WaveformViewHelpers Tests ---
+add_executable(WaveformViewHelpersTests 
+  ${SRC_ROOT}/tests/WaveformViewHelpersTests.cpp
+  ${SRC_ROOT}/ui/WaveformViewHelpers.cpp
+)
+target_include_directories(WaveformViewHelpersTests PRIVATE 
+  ${SRC_ROOT}
+  ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+target_link_libraries(WaveformViewHelpersTests PRIVATE)
+add_test(NAME WaveformViewHelpersTests COMMAND WaveformViewHelpersTests)
+
 # Aggregate target to build all tests
-add_custom_target(WooshTests DEPENDS AudioEngineTests DSPTests AudioClipTests ProjectTests)
+add_custom_target(WooshTests DEPENDS AudioEngineTests DSPTests AudioClipTests ProjectTests WaveformViewHelpersTests)
 
 # ============================================================================
 # Installation

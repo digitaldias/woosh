@@ -51,6 +51,20 @@ public:
     void clearTrim();
     bool hasTrimRegion() const;
 
+    // --- Trim display mode ---
+    void setShowFullExtent(bool show);
+    bool showFullExtent() const { return showFullExtent_; }
+
+    // --- Fade controls ---
+    void setFadeInLengthFrames(int frames);
+    void setFadeOutLengthFrames(int frames);
+    int fadeInLengthFrames() const { return fadeInLengthFrames_; }
+    int fadeOutLengthFrames() const { return fadeOutLengthFrames_; }
+
+    // --- Edit mode ---
+    void setEditMode(bool isFadeMode);
+    bool isFadeMode() const { return isFadeMode_; }
+
     // --- Playhead ---
     void setPlayheadFrame(int frame);
     int playheadFrame() const { return playheadFrame_; }
@@ -60,6 +74,7 @@ Q_SIGNALS:
     void seekRequested(int frame);
     void trimChanged(int startFrame, int endFrame);
     void trimApplyRequested();
+    void fadeChanged(int fadeInFrames, int fadeOutFrames);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -76,6 +91,7 @@ private:
     void drawWaveform(QPainter& painter, const QRect& rect);
     void drawWaveformChannel(QPainter& painter, const QRect& rect, int channel, bool flipY);
     void drawTrimRegion(QPainter& painter, const QRect& rect);
+    void drawFadeRegions(QPainter& painter, const QRect& rect);
     void drawPlayhead(QPainter& painter, const QRect& rect);
     void drawTimeRuler(QPainter& painter, const QRect& rect);
 
@@ -84,8 +100,8 @@ private:
     int xToFrame(int x) const;
 
     // --- Hit testing ---
-    enum class HandleHit { None, Start, End };
-    HandleHit hitTestTrimHandle(int x) const;
+    enum class HandleHit { None, TrimStart, TrimEnd, FadeInEnd, FadeOutStart };
+    HandleHit hitTestHandle(int x) const;
 
     // --- State ---
     AudioClip* clip_ = nullptr;
@@ -105,12 +121,18 @@ private:
     // Trim region (in frames)
     int trimStartFrame_ = 0;
     int trimEndFrame_ = 0;
+    bool showFullExtent_ = true;
+
+    // Fade regions (in frames)
+    int fadeInLengthFrames_ = 0;
+    int fadeOutLengthFrames_ = 0;
+    bool isFadeMode_ = false;
 
     // Playhead
     int playheadFrame_ = -1;
 
     // Drag state
-    enum class DragMode { None, Scroll, TrimStart, TrimEnd };
+    enum class DragMode { None, Scroll, TrimStart, TrimEnd, FadeInEnd, FadeOutStart };
     DragMode dragMode_ = DragMode::None;
     int dragStartX_ = 0;
     int dragStartValue_ = 0;

@@ -6,6 +6,34 @@ Woosh is a Qt 6-based audio batch editor for game developers. It allows loading,
 previewing, trimming, normalizing, and compressing multiple audio files with a 
 modern waveform editor interface.
 
+# Organization / Project Instructions
+
+## General behavior
+- Prefer **short, focused answers**. Do not write long essays or extensive explanations unless explicitly asked.
+- When generating code, only show the **minimal diff or minimal function(s)** needed, not entire files.
+- Do **not** re-summarize or re-scan the entire repository unless explicitly requested.
+- Avoid operations that require loading or analyzing *all* project files unless I say “repo-wide” or “project-wide”.
+
+## Context usage
+- Default to using only:
+  - The currently open file, and
+  - At most a few immediately related files (e.g., the header/implementation pair or directly related classes).
+- For Qt/C++ code:
+  - Focus on the **current widget, dialog, or controller** instead of the entire UI layer.
+  - When asked to modify UI code, work on the **specific class or file I mention** (e.g. `MainWindow`, `MyDialog`, `SomeController`).
+
+## Response size
+- Keep answers **compact**:
+  - Explanations: aim for 3–6 short paragraphs max.
+  - Code: only include the necessary functions, methods, or small code blocks. Do not output entire `.cpp`/`.h` files unless I explicitly ask.
+- If a request would naturally involve a lot of code, first propose a **plan** and ask if I want the full code.
+
+## Performance / token-awareness
+- Assume this is a **large C++ project with Qt UI**, so be conservative with context size.
+- Do not repeatedly re-analyze large `.ui` files, auto-generated code, or large third-party headers unless specifically requested.
+- If a question is ambiguous, ask one short clarifying question instead of scanning many files to guess the intent.
+
+
 ## Version Management
 
 ### IMPORTANT: Bump Version for Each Build
@@ -93,6 +121,36 @@ Current version info is auto-generated to:
 4. **Unicode Symbols**: Use appropriate fonts for transport button symbols
 
 ## Testing Requirements
+
+### CRITICAL: Test-Driven Development (TDD)
+
+**For any code that CAN be tested, write the failing test FIRST.**
+
+This is the mandatory workflow for testable code:
+
+1. **Write a failing test** that describes the expected behavior
+2. **Run the test** to confirm it fails (red)
+3. **Write the minimum code** to make the test pass (green)
+4. **Refactor** if needed while keeping tests green
+5. **Repeat** for each new piece of functionality
+
+Example TDD workflow for a new DSP function:
+```cpp
+// Step 1: Write the failing test FIRST
+static void testApplyFadeIn_linearFade() {
+    std::vector<float> samples = {1.0f, 1.0f, 1.0f, 1.0f};
+    DSP::applyFadeIn(samples, 4, FadeType::Linear);
+    // At sample 0: amplitude should be 0
+    assert(approxEqual(samples[0], 0.0f));
+    // At sample 3: amplitude should be ~0.75 (3/4)
+    assert(approxEqual(samples[3], 0.75f, 0.01f));
+}
+
+// Step 2: Run test - it fails because applyFadeIn doesn't exist
+// Step 3: Implement applyFadeIn in DSP.cpp
+// Step 4: Run test - it passes
+// Step 5: Refactor if needed
+```
 
 ### IMPORTANT: Write Tests for New Code
 

@@ -104,5 +104,75 @@ void DSP::compressor(std::vector<float>& samples, float thresholdDb, float ratio
     }
 }
 
+namespace {
+/**
+ * @brief Compute fade gain for a given position.
+ * @param position Current sample index within the fade region
+ * @param fadeLength Total length of the fade in samples
+ * @param fadeType Type of fade curve
+ * @param isFadeIn True for fade-in (0→1), false for fade-out (1→0)
+ * @return Gain value between 0.0 and 1.0
+ */
+float computeFadeGain(size_t position, size_t fadeLength, DSP::FadeType fadeType, bool isFadeIn) {
+    if (fadeLength == 0) return 1.0f;
+    
+    // Normalized position (0.0 to 1.0)
+    float t = static_cast<float>(position) / static_cast<float>(fadeLength);
+    t = std::clamp(t, 0.0f, 1.0f);
+    
+    float gain = 0.0f;
+    
+    switch (fadeType) {
+        case DSP::FadeType::Linear:
+            gain = t;
+            break;
+            
+        case DSP::FadeType::Exponential:
+            // Attempt an exponential-like curve: 
+            // For fade-in: slow start, fast finish
+            // gain = t^2 gives a nice curve
+            gain = t * t;
+            break;
+            
+        case DSP::FadeType::SCurve:
+            // Attempt smoothstep S-curve: 3t^2 - 2t^3
+            gain = t * t * (3.0f - 2.0f * t);
+            break;
+    }
+    
+    // For fade-out, invert the gain
+    if (!isFadeIn) {
+        gain = 1.0f - gain;
+    }
+    
+    return gain;
+}
+} // anonymous namespace
+
+void DSP::applyFadeIn(std::vector<float>& samples, size_t fadeLengthSamples, FadeType fadeType) {
+    if (samples.empty() || fadeLengthSamples == 0) return;
+    
+    // Clamp fade length to buffer size
+    size_t actualFadeLength = std::min(fadeLengthSamples, samples.size());
+    
+    for (size_t i = 0; i < actualFadeLength; ++i) {
+        float gain = computeFadeGain(i, actualFadeLength, fadeType, true);
+        samples[i] *= gain;
+    }
+}
+
+void DSP::applyFadeOut(std::vector<float>& samples, size_t fadeLengthSamples, FadeType fadeType) {
+    if (samples.empty() || fadeLengthSamples == 0) return;
+    
+    // Clamp fade length to buffer size
+    size_t actualFadeLength = std::min(fadeLengthSamples, samples.size());
+    size_t fadeStart = samples.size() - actualFadeLength;
+    
+    for (size_t i = 0; i < actualFadeLength; ++i) {
+        float gain = computeFadeGain(i, actualFadeLength, fadeType, false);
+        samples[fadeStart + i] *= gain;
+    }
+}
+
 
 

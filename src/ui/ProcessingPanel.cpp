@@ -96,6 +96,8 @@ void ProcessingPanel::setupUi() {
     compBtnLayout->addStretch();
     mainLayout->addLayout(compBtnLayout);
 
+    mainLayout->addStretch();
+
     // --- Connections ---
     connect(normalizeSelectedBtn_, &QPushButton::clicked, this, &ProcessingPanel::normalizeSelectedRequested);
     connect(normalizeAllBtn_, &QPushButton::clicked, this, &ProcessingPanel::normalizeAllRequested);

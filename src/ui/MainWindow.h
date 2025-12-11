@@ -74,6 +74,10 @@ private Q_SLOTS:
     void onCompressSelected();
     void onCompressAll();
 
+    // Edit mode changed
+    void onEditModeChanged(bool isFadeMode);
+    void onFadeChanged(int fadeInFrames, int fadeOutFrames);
+
     // Export actions
     void onExportSelected();
     void onExportAll();
@@ -119,6 +123,7 @@ private:
     void updateRecentProjectsMenu();
     bool maybeSaveProject();
     void loadProjectClips();
+    void applyClipState(AudioClip& clip, const ClipState& state);
 
     // Recent files/folders management (legacy)
     void addRecentFile(const QString& path);

@@ -104,6 +104,13 @@ public Q_SLOTS:
      */
     void setPlaybackRegion(int startFrame, int endFrame);
 
+    /**
+     * @brief Set fade in/out envelope for non-destructive playback.
+     * @param fadeInFrames Fade in length in frames (0 = no fade).
+     * @param fadeOutFrames Fade out length in frames (0 = no fade).
+     */
+    void setFadeEnvelope(int fadeInFrames, int fadeOutFrames);
+
 Q_SIGNALS:
     /**
      * @brief Emitted periodically during playback with current position.
@@ -161,5 +168,9 @@ private:
     // Output format (may differ from clip if resampling)
     int outputSampleRate_ = 44100;
     int outputChannels_ = 2;
+
+    // Fade envelope (non-destructive)
+    int fadeInFrames_ = 0;
+    int fadeOutFrames_ = 0;
 };
 

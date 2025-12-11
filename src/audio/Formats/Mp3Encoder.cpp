@@ -47,21 +47,22 @@ bool Mp3Encoder::encode(
         lame_set_VBR(gfp, vbr_default);
         lame_set_VBR_quality(gfp, 2.0f);  // ~190 kbps average
     } else {
-        // CBR mode
+        // CBR mode - explicitly disable VBR
         lame_set_VBR(gfp, vbr_off);
         lame_set_brate(gfp, static_cast<int>(bitrate));
+        // Force CBR by disabling VBR and ABR
+        lame_set_VBR_mean_bitrate_kbps(gfp, static_cast<int>(bitrate));
     }
 
     // Quality setting (0=best/slowest, 9=worst/fastest)
     // Use 2 for high quality
     lame_set_quality(gfp, 2);
 
-    // Configure ID3 tags
-    lame_set_write_id3tag_automatic(gfp, 1);
-    
-    // Set ID3v2 tags
+    // Configure ID3 tags - initialize first to clear any defaults
     id3tag_init(gfp);
     id3tag_add_v2(gfp);
+    id3tag_v2_only(gfp);  // Only write ID3v2, not v1
+    lame_set_write_id3tag_automatic(gfp, 1);
     
     // Get title from metadata or filename
     std::string title = metadata.title;

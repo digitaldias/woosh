@@ -11,6 +11,8 @@
 
 class QPushButton;
 class QLabel;
+class QCheckBox;
+class ToggleSwitch;
 
 /**
  * @class TransportPanel
@@ -64,6 +66,12 @@ Q_SIGNALS:
     /** @brief Apply trim button clicked. */
     void applyTrimClicked();
 
+    /** @brief Show full clip extent checkbox toggled. */
+    void showFullExtentChanged(bool show);
+
+    /** @brief Edit mode toggled between trim and fade. */
+    void editModeChanged(bool isFadeMode);
+
 private:
     void setupUi();
     QString formatTime(double seconds) const;
@@ -74,6 +82,8 @@ private:
     QPushButton* zoomOutBtn_ = nullptr;
     QPushButton* zoomFitBtn_ = nullptr;
     QPushButton* applyTrimBtn_ = nullptr;
+    ToggleSwitch* modeToggleSwitch_ = nullptr;
     QLabel* timeLabel_ = nullptr;
+    QCheckBox* showFullExtentCheck_ = nullptr;
 };
 

@@ -96,18 +96,21 @@ static void applyDarkTheme(QApplication& app) {
             color: #9cc4e8;
         }
 
-        /* Buttons */
+        /* Buttons - Default style */
         QPushButton {
             background-color: #3d424d;
             border: 1px solid #4a505c;
-            border-radius: 5px;
-            padding: 6px 14px;
-            min-height: 18px;
+            border-radius: 6px;
+            padding: 8px 16px;
+            min-height: 24px;
+            min-width: 32px;
+            font-size: 13px;
+            font-weight: 500;
             color: #dcdce1;
         }
         QPushButton:hover {
-            background-color: #474d5a;
-            border-color: #5a6070;
+            background-color: #4a5262;
+            border-color: #6080a0;
         }
         QPushButton:pressed {
             background-color: #4180b4;
@@ -116,7 +119,45 @@ static void applyDarkTheme(QApplication& app) {
         QPushButton:disabled {
             background-color: #2d3037;
             border-color: #3a3e47;
-            color: #787880;
+            color: #606068;
+        }
+        
+        /* Transport buttons (play, stop, zoom) - larger and more prominent */
+        QPushButton[class="transport"] {
+            min-width: 40px;
+            min-height: 36px;
+            font-size: 16px;
+            padding: 6px 12px;
+            border-radius: 8px;
+        }
+        
+        /* Primary action buttons (Export, Apply, etc.) */
+        QPushButton[class="primary"] {
+            background-color: #3070a0;
+            border-color: #4080b0;
+            font-weight: bold;
+        }
+        QPushButton[class="primary"]:hover {
+            background-color: #4088b8;
+            border-color: #50a0d0;
+        }
+        QPushButton[class="primary"]:pressed {
+            background-color: #3090c0;
+        }
+        QPushButton[class="primary"]:disabled {
+            background-color: #2a3540;
+            border-color: #3a4550;
+            color: #606068;
+        }
+        
+        /* Secondary action buttons (Normalize, Compress) */
+        QPushButton[class="secondary"] {
+            background-color: #404854;
+            border-color: #505a68;
+        }
+        QPushButton[class="secondary"]:hover {
+            background-color: #4a5464;
+            border-color: #6080a0;
         }
 
         /* Line edits */

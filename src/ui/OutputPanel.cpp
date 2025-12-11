@@ -6,10 +6,8 @@
 #include "OutputPanel.h"
 
 #include <QCheckBox>
-#include <QFileDialog>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -22,20 +20,15 @@ OutputPanel::OutputPanel(QWidget* parent)
 void OutputPanel::setupUi() {
     auto* mainLayout = new QVBoxLayout(this);
 
-    // --- Output folder row ---
+    // --- Output folder row (read-only display) ---
     auto* folderLayout = new QHBoxLayout();
     folderLayout->addWidget(new QLabel(tr("Output Folder:"), this));
 
-    folderEdit_ = new QLineEdit(this);
-    folderEdit_->setPlaceholderText(tr("Select output folder..."));
-    folderEdit_->setReadOnly(true);
-    folderEdit_->setToolTip(tr("Folder where processed files will be saved"));
-    folderLayout->addWidget(folderEdit_, 1);
-
-    browseBtn_ = new QPushButton(tr("..."), this);
-    browseBtn_->setFixedWidth(30);
-    browseBtn_->setToolTip(tr("Browse for output folder"));
-    folderLayout->addWidget(browseBtn_);
+    folderLabel_ = new QLabel(this);
+    folderLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    folderLabel_->setStyleSheet("QLabel { color: #888; padding: 2px; }");
+    folderLabel_->setToolTip(tr("Folder where processed files will be saved (configured in project settings)"));
+    folderLayout->addWidget(folderLabel_, 1);
 
     mainLayout->addLayout(folderLayout);
 
@@ -60,38 +53,28 @@ void OutputPanel::setupUi() {
     mainLayout->addLayout(btnLayout);
 
     // --- Connections ---
-    connect(browseBtn_, &QPushButton::clicked, this, &OutputPanel::onBrowseClicked);
     connect(exportSelectedBtn_, &QPushButton::clicked, this, &OutputPanel::exportSelected);
     connect(exportAllBtn_, &QPushButton::clicked, this, &OutputPanel::exportAll);
 }
 
 QString OutputPanel::outputFolder() const {
-    return folderEdit_->text();
+    return outputFolder_;
 }
 
 void OutputPanel::setOutputFolder(const QString& path) {
-    folderEdit_->setText(path);
+    outputFolder_ = path;
+    if (path.isEmpty()) {
+        folderLabel_->setText(tr("(Set in Project → New/Edit Project)"));
+    } else {
+        // Show abbreviated path if too long
+        QFontMetrics fm(folderLabel_->font());
+        QString elidedPath = fm.elidedText(path, Qt::ElideMiddle, 300);
+        folderLabel_->setText(elidedPath);
+        folderLabel_->setToolTip(path);  // Full path in tooltip
+    }
 }
 
 bool OutputPanel::overwriteOriginals() const {
     return overwriteCheck_->isChecked();
-}
-
-void OutputPanel::onBrowseClicked() {
-    QString startDir = folderEdit_->text();
-    if (startDir.isEmpty()) {
-        startDir = QDir::homePath();
-    }
-
-    QString folder = QFileDialog::getExistingDirectory(
-        this,
-        tr("Select Output Folder"),
-        startDir
-    );
-
-    if (!folder.isEmpty()) {
-        folderEdit_->setText(folder);
-        Q_EMIT outputFolderChanged(folder);
-    }
 }
 

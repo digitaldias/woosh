@@ -255,6 +255,153 @@ static void testCompressor_monoSignal() {
 }
 
 // ============================================================================
+// applyFadeIn tests
+// ============================================================================
+
+static void testApplyFadeIn_linearFade() {
+    // Create a buffer of constant 1.0 samples
+    std::vector<float> samples(100, 1.0f);
+    
+    // Apply linear fade in over 50 samples
+    DSP::applyFadeIn(samples, 50, DSP::FadeType::Linear);
+    
+    // At sample 0: should be 0 (start of fade)
+    assert(approxEqual(samples[0], 0.0f, 0.01f));
+    
+    // At sample 25: should be ~0.5 (middle of fade)
+    assert(approxEqual(samples[25], 0.5f, 0.02f));
+    
+    // At sample 49: should be close to 1.0 (end of fade)
+    assert(approxEqual(samples[49], 0.98f, 0.05f));
+    
+    // At sample 50+: should be unmodified (1.0)
+    assert(approxEqual(samples[50], 1.0f, 0.01f));
+    assert(approxEqual(samples[99], 1.0f, 0.01f));
+}
+
+static void testApplyFadeIn_exponentialFade() {
+    std::vector<float> samples(100, 1.0f);
+    
+    DSP::applyFadeIn(samples, 50, DSP::FadeType::Exponential);
+    
+    // Exponential starts slower than linear
+    assert(samples[0] < 0.01f);  // Should start at 0
+    assert(samples[25] < 0.5f);   // Should be less than linear midpoint
+    assert(samples[49] > 0.9f);   // Should approach 1.0 at end
+    assert(approxEqual(samples[50], 1.0f, 0.01f));  // Unmodified after fade
+}
+
+static void testApplyFadeIn_sCurveFade() {
+    std::vector<float> samples(100, 1.0f);
+    
+    DSP::applyFadeIn(samples, 50, DSP::FadeType::SCurve);
+    
+    // S-curve starts slow, accelerates in middle, slows at end
+    assert(samples[0] < 0.01f);   // Should start at 0
+    assert(samples[25] > 0.3f && samples[25] < 0.7f);  // Middle should be near 0.5
+    assert(samples[49] > 0.95f);  // Should approach 1.0 at end
+}
+
+static void testApplyFadeIn_emptyBuffer() {
+    std::vector<float> empty;
+    DSP::applyFadeIn(empty, 50, DSP::FadeType::Linear);
+    assert(empty.empty());  // Should not crash, remain empty
+}
+
+static void testApplyFadeIn_zeroLength() {
+    std::vector<float> samples(100, 1.0f);
+    auto original = samples;
+    
+    DSP::applyFadeIn(samples, 0, DSP::FadeType::Linear);
+    
+    // Zero-length fade should leave samples unchanged
+    assert(samples == original);
+}
+
+static void testApplyFadeIn_fadeLongerThanBuffer() {
+    std::vector<float> samples(10, 1.0f);
+    
+    // Fade length exceeds buffer - should apply fade to entire buffer
+    DSP::applyFadeIn(samples, 100, DSP::FadeType::Linear);
+    
+    // All samples should be faded (partial fade)
+    assert(samples[0] < 0.01f);
+    assert(samples[9] < 1.0f);  // Last sample still fading
+}
+
+static void testApplyFadeIn_stereoBuffer() {
+    // Stereo: L R L R L R ... (6 samples = 3 frames)
+    std::vector<float> samples = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+    
+    // Fade over 3 frames (6 samples) - treats as interleaved stereo
+    DSP::applyFadeIn(samples, 6, DSP::FadeType::Linear);
+    
+    // First sample pair should be near 0
+    assert(samples[0] < 0.2f);
+    assert(samples[1] < 0.2f);
+}
+
+// ============================================================================
+// applyFadeOut tests
+// ============================================================================
+
+static void testApplyFadeOut_linearFade() {
+    std::vector<float> samples(100, 1.0f);
+    
+    // Apply linear fade out over last 50 samples
+    DSP::applyFadeOut(samples, 50, DSP::FadeType::Linear);
+    
+    // First 50 samples should be unmodified
+    assert(approxEqual(samples[0], 1.0f, 0.01f));
+    assert(approxEqual(samples[49], 1.0f, 0.01f));
+    
+    // At sample 50: start of fade, should be ~1.0
+    assert(approxEqual(samples[50], 1.0f, 0.05f));
+    
+    // At sample 75: middle of fade, should be ~0.5
+    assert(approxEqual(samples[75], 0.5f, 0.05f));
+    
+    // At sample 99: end of fade, should be near 0
+    assert(samples[99] < 0.05f);
+}
+
+static void testApplyFadeOut_exponentialFade() {
+    std::vector<float> samples(100, 1.0f);
+    
+    DSP::applyFadeOut(samples, 50, DSP::FadeType::Exponential);
+    
+    // Exponential fade drops faster initially
+    assert(approxEqual(samples[49], 1.0f, 0.01f));  // Before fade
+    assert(samples[75] > 0.5f);  // Exponential drops slower in middle
+    assert(samples[99] < 0.1f);  // Near 0 at end
+}
+
+static void testApplyFadeOut_emptyBuffer() {
+    std::vector<float> empty;
+    DSP::applyFadeOut(empty, 50, DSP::FadeType::Linear);
+    assert(empty.empty());
+}
+
+static void testApplyFadeOut_zeroLength() {
+    std::vector<float> samples(100, 1.0f);
+    auto original = samples;
+    
+    DSP::applyFadeOut(samples, 0, DSP::FadeType::Linear);
+    
+    assert(samples == original);
+}
+
+static void testApplyFadeOut_fadeLongerThanBuffer() {
+    std::vector<float> samples(10, 1.0f);
+    
+    DSP::applyFadeOut(samples, 100, DSP::FadeType::Linear);
+    
+    // Entire buffer is fading
+    assert(samples[0] > 0.8f);   // Start of fade (near 1.0)
+    assert(samples[9] < 0.2f);   // End approaching 0
+}
+
+// ============================================================================
 // Main test runner
 // ============================================================================
 
@@ -293,6 +440,22 @@ int main() {
     testCompressor_invalidSampleRate();
     testCompressor_invalidChannels();
     testCompressor_monoSignal();
+    
+    // applyFadeIn tests
+    testApplyFadeIn_linearFade();
+    testApplyFadeIn_exponentialFade();
+    testApplyFadeIn_sCurveFade();
+    testApplyFadeIn_emptyBuffer();
+    testApplyFadeIn_zeroLength();
+    testApplyFadeIn_fadeLongerThanBuffer();
+    testApplyFadeIn_stereoBuffer();
+    
+    // applyFadeOut tests
+    testApplyFadeOut_linearFade();
+    testApplyFadeOut_exponentialFade();
+    testApplyFadeOut_emptyBuffer();
+    testApplyFadeOut_zeroLength();
+    testApplyFadeOut_fadeLongerThanBuffer();
     
     return 0;
 }

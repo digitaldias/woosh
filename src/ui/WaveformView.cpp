@@ -11,6 +11,7 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QLinearGradient>
+#include <QPainterPath>
 #include <QtMath>
 #include <algorithm>
 #include <cmath>
@@ -136,6 +137,35 @@ bool WaveformView::hasTrimRegion() const {
     return trimStartFrame_ > 0 || trimEndFrame_ > 0;
 }
 
+void WaveformView::setShowFullExtent(bool show) {
+    showFullExtent_ = show;
+    cacheValid_ = false;
+    update();
+}
+
+void WaveformView::setFadeInLengthFrames(int frames) {
+    int newFrames = std::max(0, frames);
+    if (newFrames != fadeInLengthFrames_) {
+        fadeInLengthFrames_ = newFrames;
+        Q_EMIT fadeChanged(fadeInLengthFrames_, fadeOutLengthFrames_);
+        update();
+    }
+}
+
+void WaveformView::setFadeOutLengthFrames(int frames) {
+    int newFrames = std::max(0, frames);
+    if (newFrames != fadeOutLengthFrames_) {
+        fadeOutLengthFrames_ = newFrames;
+        Q_EMIT fadeChanged(fadeInLengthFrames_, fadeOutLengthFrames_);
+        update();
+    }
+}
+
+void WaveformView::setEditMode(bool isFadeMode) {
+    isFadeMode_ = isFadeMode;
+    update();
+}
+
 // ============================================================================
 // Playhead
 // ============================================================================
@@ -183,6 +213,7 @@ void WaveformView::paintEvent(QPaintEvent* event) {
 
     drawWaveform(painter, waveformRect);
     drawTrimRegion(painter, waveformRect);
+    drawFadeRegions(painter, waveformRect);
     drawPlayhead(painter, waveformRect);
     drawTimeRuler(painter, rulerRect);
 }
@@ -360,28 +391,31 @@ void WaveformView::drawTrimRegion(QPainter& painter, const QRect& rect) {
     int maxFrame = static_cast<int>(clip_->frameCount());
     int effectiveEndFrame = (trimEndFrame_ > 0) ? trimEndFrame_ : maxFrame;
 
-    // Semi-transparent overlay for trimmed regions
-    QColor trimmedColor(0, 0, 0, 140);
+    // Only show trim overlays if showing full extent
+    if (showFullExtent_) {
+        // Semi-transparent overlay for trimmed regions
+        QColor trimmedColor(0, 0, 0, 140);
 
-    // Left trimmed region
-    if (trimStartFrame_ > 0) {
-        int xEnd = frameToX(trimStartFrame_);
-        if (xEnd > rect.left()) {
-            painter.fillRect(rect.left(), rect.top(), xEnd - rect.left(), rect.height(), trimmedColor);
+        // Left trimmed region
+        if (trimStartFrame_ > 0) {
+            int xEnd = frameToX(trimStartFrame_);
+            if (xEnd > rect.left()) {
+                painter.fillRect(rect.left(), rect.top(), xEnd - rect.left(), rect.height(), trimmedColor);
+            }
+        }
+
+        // Right trimmed region
+        if (trimEndFrame_ > 0 && trimEndFrame_ < maxFrame) {
+            int xStart = frameToX(trimEndFrame_);
+            if (xStart < rect.right()) {
+                painter.fillRect(xStart, rect.top(), rect.right() - xStart, rect.height(), trimmedColor);
+            }
         }
     }
 
-    // Right trimmed region
-    if (trimEndFrame_ > 0 && trimEndFrame_ < maxFrame) {
-        int xStart = frameToX(trimEndFrame_);
-        if (xStart < rect.right()) {
-            painter.fillRect(xStart, rect.top(), rect.right() - xStart, rect.height(), trimmedColor);
-        }
-    }
-
-    // Draw trim handles
-    QColor handleColor(255, 180, 60);
-    QColor handleLineColor(255, 200, 80);
+    // Choose colors based on edit mode
+    QColor handleColor = isFadeMode_ ? QColor(0, 200, 255) : QColor(255, 180, 60);  // Cyan vs Yellow
+    QColor handleLineColor = isFadeMode_ ? QColor(80, 220, 255) : QColor(255, 200, 80);
 
     // Start handle
     int xStart = frameToX(trimStartFrame_);
@@ -414,6 +448,98 @@ void WaveformView::drawTrimRegion(QPainter& painter, const QRect& rect) {
         painter.setBrush(handleColor);
         painter.drawPolygon(endHandle);
     }
+}
+
+void WaveformView::drawFadeRegions(QPainter& painter, const QRect& rect) {
+    if (!clip_ || !isFadeMode_ || (fadeInLengthFrames_ == 0 && fadeOutLengthFrames_ == 0)) return;
+
+    int maxFrame = static_cast<int>(clip_->frameCount());
+    int effectiveEndFrame = (trimEndFrame_ > 0) ? trimEndFrame_ : maxFrame;
+    int activeLength = effectiveEndFrame - trimStartFrame_;
+    
+    if (activeLength <= 0) return;
+
+    // Clamp fades to half the active region each
+    int maxFadeEach = activeLength / 2;
+    int clampedFadeIn = std::min(fadeInLengthFrames_, maxFadeEach);
+    int clampedFadeOut = std::min(fadeOutLengthFrames_, maxFadeEach);
+
+    QColor fadeLineColor(0, 200, 255);  // Cyan
+    QColor fadeFillColor(0, 200, 255, 30);
+
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    // Fade in curve (S-curve from bottom to top)
+    if (clampedFadeIn > 0) {
+        int xStart = frameToX(trimStartFrame_);
+        int xEnd = frameToX(trimStartFrame_ + clampedFadeIn);
+        
+        if (xEnd > rect.left() && xStart < rect.right()) {
+            int centerY = rect.center().y();
+            int halfHeight = rect.height() / 2;
+
+            // Draw smooth S-curve fade line
+            QPainterPath fadePath;
+            fadePath.moveTo(xStart, rect.bottom());
+            
+            int steps = std::min(100, xEnd - xStart);
+            for (int i = 0; i <= steps; ++i) {
+                float t = static_cast<float>(i) / steps;
+                // S-curve: smoothstep function
+                float gain = t * t * (3.0f - 2.0f * t);
+                int x = xStart + static_cast<int>((xEnd - xStart) * t);
+                int y = rect.bottom() - static_cast<int>(halfHeight * 2 * gain);
+                fadePath.lineTo(x, y);
+            }
+
+            // Draw filled area under curve
+            QPainterPath fillPath = fadePath;
+            fillPath.lineTo(xEnd, rect.bottom());
+            fillPath.lineTo(xStart, rect.bottom());
+            painter.fillPath(fillPath, fadeFillColor);
+
+            // Draw curve line
+            painter.setPen(QPen(fadeLineColor, 2));
+            painter.drawPath(fadePath);
+        }
+    }
+
+    // Fade out curve (S-curve from top to bottom)
+    if (clampedFadeOut > 0) {
+        int xStart = frameToX(effectiveEndFrame - clampedFadeOut);
+        int xEnd = frameToX(effectiveEndFrame);
+        
+        if (xStart < rect.right() && xEnd > rect.left()) {
+            int centerY = rect.center().y();
+            int halfHeight = rect.height() / 2;
+
+            // Draw smooth S-curve fade line
+            QPainterPath fadePath;
+            fadePath.moveTo(xStart, rect.top());
+            
+            int steps = std::min(100, xEnd - xStart);
+            for (int i = 0; i <= steps; ++i) {
+                float t = static_cast<float>(i) / steps;
+                // S-curve: smoothstep function (inverted for fade-out)
+                float gain = 1.0f - (t * t * (3.0f - 2.0f * t));
+                int x = xStart + static_cast<int>((xEnd - xStart) * t);
+                int y = rect.top() + static_cast<int>(halfHeight * 2 * (1.0f - gain));
+                fadePath.lineTo(x, y);
+            }
+
+            // Draw filled area under curve
+            QPainterPath fillPath = fadePath;
+            fillPath.lineTo(xEnd, rect.bottom());
+            fillPath.lineTo(xStart, rect.bottom());
+            painter.fillPath(fillPath, fadeFillColor);
+
+            // Draw curve line
+            painter.setPen(QPen(fadeLineColor, 2));
+            painter.drawPath(fadePath);
+        }
+    }
+
+    painter.setRenderHint(QPainter::Antialiasing, false);
 }
 
 void WaveformView::drawPlayhead(QPainter& painter, const QRect& rect) {
@@ -515,21 +641,44 @@ int WaveformView::xToFrame(int x) const {
 // Hit testing
 // ============================================================================
 
-WaveformView::HandleHit WaveformView::hitTestTrimHandle(int x) const {
+WaveformView::HandleHit WaveformView::hitTestHandle(int x) const {
     if (!clip_) return HandleHit::None;
 
     int maxFrame = static_cast<int>(clip_->frameCount());
     int effectiveEndFrame = (trimEndFrame_ > 0) ? trimEndFrame_ : maxFrame;
+    int activeLength = effectiveEndFrame - trimStartFrame_;
 
-    int xStart = frameToX(trimStartFrame_);
-    int xEnd = frameToX(effectiveEndFrame);
+    // Test trim handles first (higher priority)
+    int xTrimStart = frameToX(trimStartFrame_);
+    int xTrimEnd = frameToX(effectiveEndFrame);
 
-    if (std::abs(x - xStart) <= kHandleWidth) {
-        return HandleHit::Start;
+    if (std::abs(x - xTrimStart) <= kHandleWidth) {
+        return HandleHit::TrimStart;
     }
 
-    if (std::abs(x - xEnd) <= kHandleWidth) {
-        return HandleHit::End;
+    if (std::abs(x - xTrimEnd) <= kHandleWidth) {
+        return HandleHit::TrimEnd;
+    }
+
+    // Test fade handles (lower priority, only if fades are active)
+    if (activeLength > 0) {
+        int maxFadeEach = activeLength / 2;
+        int clampedFadeIn = std::min(fadeInLengthFrames_, maxFadeEach);
+        int clampedFadeOut = std::min(fadeOutLengthFrames_, maxFadeEach);
+
+        if (clampedFadeIn > 0) {
+            int xFadeInEnd = frameToX(trimStartFrame_ + clampedFadeIn);
+            if (std::abs(x - xFadeInEnd) <= kHandleWidth) {
+                return HandleHit::FadeInEnd;
+            }
+        }
+
+        if (clampedFadeOut > 0) {
+            int xFadeOutStart = frameToX(effectiveEndFrame - clampedFadeOut);
+            if (std::abs(x - xFadeOutStart) <= kHandleWidth) {
+                return HandleHit::FadeOutStart;
+            }
+        }
     }
 
     return HandleHit::None;
@@ -543,20 +692,37 @@ void WaveformView::mousePressEvent(QMouseEvent* event) {
     if (!clip_) return;
 
     if (event->button() == Qt::LeftButton) {
-        HandleHit hit = hitTestTrimHandle(event->pos().x());
+        HandleHit hit = hitTestHandle(event->pos().x());
 
-        if (hit == HandleHit::Start) {
-            dragMode_ = DragMode::TrimStart;
-            dragStartX_ = event->pos().x();
-            dragStartValue_ = trimStartFrame_;
-        } else if (hit == HandleHit::End) {
-            dragMode_ = DragMode::TrimEnd;
-            dragStartX_ = event->pos().x();
-            int maxFrame = static_cast<int>(clip_->frameCount());
-            dragStartValue_ = (trimEndFrame_ > 0) ? trimEndFrame_ : maxFrame;
+        if (isFadeMode_) {
+            // In fade mode: dragging trim handles adjusts fade lengths
+            if (hit == HandleHit::TrimStart) {
+                dragMode_ = DragMode::FadeInEnd;
+                dragStartX_ = event->pos().x();
+                dragStartValue_ = fadeInLengthFrames_;
+            } else if (hit == HandleHit::TrimEnd) {
+                dragMode_ = DragMode::FadeOutStart;
+                dragStartX_ = event->pos().x();
+                dragStartValue_ = fadeOutLengthFrames_;
+            } else {
+                int frame = xToFrame(event->pos().x());
+                Q_EMIT seekRequested(frame);
+            }
         } else {
-            int frame = xToFrame(event->pos().x());
-            Q_EMIT seekRequested(frame);
+            // In trim mode: normal trim behavior
+            if (hit == HandleHit::TrimStart) {
+                dragMode_ = DragMode::TrimStart;
+                dragStartX_ = event->pos().x();
+                dragStartValue_ = trimStartFrame_;
+            } else if (hit == HandleHit::TrimEnd) {
+                dragMode_ = DragMode::TrimEnd;
+                dragStartX_ = event->pos().x();
+                int maxFrame = static_cast<int>(clip_->frameCount());
+                dragStartValue_ = (trimEndFrame_ > 0) ? trimEndFrame_ : maxFrame;
+            } else {
+                int frame = xToFrame(event->pos().x());
+                Q_EMIT seekRequested(frame);
+            }
         }
     } else if (event->button() == Qt::MiddleButton) {
         dragMode_ = DragMode::Scroll;
@@ -579,6 +745,24 @@ void WaveformView::mouseMoveEvent(QMouseEvent* event) {
     } else if (dragMode_ == DragMode::TrimEnd) {
         int newFrame = xToFrame(x);
         setTrimEndFrame(newFrame);
+    } else if (dragMode_ == DragMode::FadeInEnd) {
+        int maxFrame = static_cast<int>(clip_->frameCount());
+        int effectiveEndFrame = (trimEndFrame_ > 0) ? trimEndFrame_ : maxFrame;
+        int activeLength = effectiveEndFrame - trimStartFrame_;
+        int maxFadeEach = activeLength / 2;
+        
+        int newFrame = xToFrame(x);
+        int newFadeLength = std::clamp(newFrame - trimStartFrame_, 0, maxFadeEach);
+        setFadeInLengthFrames(newFadeLength);
+    } else if (dragMode_ == DragMode::FadeOutStart) {
+        int maxFrame = static_cast<int>(clip_->frameCount());
+        int effectiveEndFrame = (trimEndFrame_ > 0) ? trimEndFrame_ : maxFrame;
+        int activeLength = effectiveEndFrame - trimStartFrame_;
+        int maxFadeEach = activeLength / 2;
+        
+        int newFrame = xToFrame(x);
+        int newFadeLength = std::clamp(effectiveEndFrame - newFrame, 0, maxFadeEach);
+        setFadeOutLengthFrames(newFadeLength);
     } else if (dragMode_ == DragMode::Scroll) {
         int deltaX = dragStartX_ - x;
         int deltaFrames = static_cast<int>(deltaX * samplesPerPixel_);
@@ -589,7 +773,7 @@ void WaveformView::mouseMoveEvent(QMouseEvent* event) {
         cacheValid_ = false;
         update();
     } else {
-        HandleHit hit = hitTestTrimHandle(x);
+        HandleHit hit = hitTestHandle(x);
         if (hit != HandleHit::None) {
             setCursor(Qt::SizeHorCursor);
         } else {

@@ -44,21 +44,39 @@ void AudioEngine::compress(AudioClip& clip, float thresholdDb, float ratio, floa
     refreshMetrics(clip);
 }
 
-bool AudioEngine::exportWav(const AudioClip& clip, const std::string& outFolder) {
+bool AudioEngine::exportWav(const AudioClip& clip, const std::string& outFolder, int fadeInFrames, int fadeOutFrames) {
     namespace fs = std::filesystem;
     fs::path folder(outFolder);
     fs::create_directories(folder);
     fs::path inPath(clip.filePath());
     auto outName = inPath.stem().string() + ".wav";
     fs::path outPath = folder / outName;
-    return wavCodec_.write(outPath.string(), clip);
+
+    // If no fades, export directly
+    if (fadeInFrames <= 0 && fadeOutFrames <= 0) {
+        return wavCodec_.write(outPath.string(), clip);
+    }
+
+    // Create a copy with fades applied
+    AudioClip fadedClip = clip;
+    if (fadeInFrames > 0) {
+        DSP::applyFadeIn(fadedClip.samplesMutable(), fadeInFrames, DSP::FadeType::SCurve);
+    }
+    if (fadeOutFrames > 0) {
+        DSP::applyFadeOut(fadedClip.samplesMutable(), fadeOutFrames, DSP::FadeType::SCurve);
+    }
+    refreshMetrics(fadedClip);
+
+    return wavCodec_.write(outPath.string(), fadedClip);
 }
 
 bool AudioEngine::exportMp3(
     const AudioClip& clip, 
     const std::string& outFolder,
     Mp3Encoder::BitrateMode bitrate,
-    const Mp3Metadata& metadata
+    const Mp3Metadata& metadata,
+    int fadeInFrames,
+    int fadeOutFrames
 ) {
     namespace fs = std::filesystem;
     fs::path folder(outFolder);
@@ -66,7 +84,23 @@ bool AudioEngine::exportMp3(
     fs::path inPath(clip.filePath());
     auto outName = inPath.stem().string() + ".mp3";
     fs::path outPath = folder / outName;
-    return mp3Encoder_.encode(clip, outPath.string(), bitrate, metadata);
+
+    // If no fades, export directly
+    if (fadeInFrames <= 0 && fadeOutFrames <= 0) {
+        return mp3Encoder_.encode(clip, outPath.string(), bitrate, metadata);
+    }
+
+    // Create a copy with fades applied
+    AudioClip fadedClip = clip;
+    if (fadeInFrames > 0) {
+        DSP::applyFadeIn(fadedClip.samplesMutable(), fadeInFrames, DSP::FadeType::SCurve);
+    }
+    if (fadeOutFrames > 0) {
+        DSP::applyFadeOut(fadedClip.samplesMutable(), fadeOutFrames, DSP::FadeType::SCurve);
+    }
+    refreshMetrics(fadedClip);
+
+    return mp3Encoder_.encode(fadedClip, outPath.string(), bitrate, metadata);
 }
 
 void AudioEngine::updateClipMetrics(AudioClip& clip) {

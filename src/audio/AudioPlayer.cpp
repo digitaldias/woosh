@@ -174,6 +174,11 @@ void AudioPlayer::setPlaybackRegion(int startFrame, int endFrame) {
     }
 }
 
+void AudioPlayer::setFadeEnvelope(int fadeInFrames, int fadeOutFrames) {
+    fadeInFrames_ = std::max(0, fadeInFrames);
+    fadeOutFrames_ = std::max(0, fadeOutFrames);
+}
+
 // ============================================================================
 // Audio output setup
 // ============================================================================
@@ -254,7 +259,22 @@ void AudioPlayer::prepareBuffer() {
 
         size_t startSample = startFrame * srcChannels;
         for (size_t i = 0; i < sampleCount; ++i) {
-            float val = samples[startSample + i];
+            size_t frameIdx = i / srcChannels;
+            float gain = 1.0f;
+
+            // Apply fade in (S-curve)
+            if (fadeInFrames_ > 0 && frameIdx < static_cast<size_t>(fadeInFrames_)) {
+                float t = static_cast<float>(frameIdx) / fadeInFrames_;
+                gain = t * t * (3.0f - 2.0f * t);  // Smoothstep
+            }
+            // Apply fade out (S-curve)
+            else if (fadeOutFrames_ > 0 && frameIdx >= regionFrames - static_cast<size_t>(fadeOutFrames_)) {
+                size_t fadeOutStart = regionFrames - fadeOutFrames_;
+                float t = static_cast<float>(frameIdx - fadeOutStart) / fadeOutFrames_;
+                gain = 1.0f - (t * t * (3.0f - 2.0f * t));  // Inverted smoothstep
+            }
+
+            float val = samples[startSample + i] * gain;
             val = std::clamp(val, -1.0f, 1.0f);
             pcmPtr[i] = static_cast<qint16>(val * 32767.0f);
         }
@@ -285,6 +305,19 @@ void AudioPlayer::prepareBuffer() {
 
                 // Linear interpolation
                 float val = static_cast<float>(val1 * (1.0 - frac) + val2 * frac);
+
+                // Apply fade envelope
+                float gain = 1.0f;
+                if (fadeInFrames_ > 0 && outFrame < static_cast<size_t>(fadeInFrames_)) {
+                    float t = static_cast<float>(outFrame) / fadeInFrames_;
+                    gain = t * t * (3.0f - 2.0f * t);  // Smoothstep
+                } else if (fadeOutFrames_ > 0 && outFrame >= outFrames - static_cast<size_t>(fadeOutFrames_)) {
+                    size_t fadeOutStart = outFrames - fadeOutFrames_;
+                    float t = static_cast<float>(outFrame - fadeOutStart) / fadeOutFrames_;
+                    gain = 1.0f - (t * t * (3.0f - 2.0f * t));  // Inverted smoothstep
+                }
+
+                val *= gain;
                 val = std::clamp(val, -1.0f, 1.0f);
 
                 pcmPtr[outFrame * outputChannels_ + ch] = static_cast<qint16>(val * 32767.0f);

@@ -62,6 +62,10 @@ struct ClipState {
     double trimStartSec{0.0};
     double trimEndSec{0.0};
     
+    // Fade parameters (in frames)
+    int fadeInFrames{0};
+    int fadeOutFrames{0};
+    
     // Export info
     std::string exportedFilename;       ///< Name of exported file in game folder
 };

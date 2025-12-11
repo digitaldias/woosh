@@ -166,6 +166,9 @@ void MainWindow::setupUi() {
     connect(transportPanel_, &TransportPanel::zoomOutClicked, waveformView_, &WaveformView::zoomOut);
     connect(transportPanel_, &TransportPanel::zoomFitClicked, waveformView_, &WaveformView::zoomToFit);
     connect(transportPanel_, &TransportPanel::applyTrimClicked, this, &MainWindow::onApplyTrim);
+    connect(transportPanel_, &TransportPanel::showFullExtentChanged, waveformView_, &WaveformView::setShowFullExtent);
+    connect(transportPanel_, &TransportPanel::editModeChanged, this, &MainWindow::onEditModeChanged);
+    connect(waveformView_, &WaveformView::fadeChanged, this, &MainWindow::onFadeChanged);
 
     // Processing + VU meter side by side
     auto* processingRow = new QWidget(rightPane);
@@ -740,6 +743,32 @@ void MainWindow::loadProjectClips() {
     }
 }
 
+void MainWindow::applyClipState(AudioClip& clip, const ClipState& state) {
+    // Save original first (if not already saved)
+    if (!clip.hasOriginal()) {
+        clip.saveOriginal();
+    }
+    
+    // Apply trim if stored
+    if (state.isTrimmed) {
+        engine_.trim(clip, static_cast<float>(state.trimStartSec), static_cast<float>(state.trimEndSec));
+    }
+    
+    // Apply normalization if stored
+    if (state.isNormalized) {
+        engine_.normalizeToPeak(clip, static_cast<float>(state.normalizeTargetDb));
+    }
+    
+    // Apply compression if stored
+    if (state.isCompressed) {
+        const auto& cs = state.compressorSettings;
+        engine_.compress(clip, cs.threshold, cs.ratio, cs.attackMs, cs.releaseMs, cs.makeupDb);
+    }
+    
+    // Note: Fades are non-destructive and applied during playback/export,
+    // so we don't need to apply them to the clip samples here
+}
+
 void MainWindow::closeEvent(QCloseEvent* event) {
     if (!maybeSaveProject()) {
         event->ignore();
@@ -912,11 +941,16 @@ void MainWindow::onLoadingFinished() {
         // Register clip with project if we have one
         if (projectManager_.hasProject()) {
             std::string relativePath = clip.displayName();
-            // Only add if not already tracked
-            if (!projectManager_.project().findClipState(relativePath)) {
-                ClipState state;
-                state.relativePath = relativePath;
-                projectManager_.project().addClipState(state);
+            ClipState* state = projectManager_.project().findClipState(relativePath);
+            
+            if (!state) {
+                // Create new state for new clip
+                ClipState newState;
+                newState.relativePath = relativePath;
+                projectManager_.project().addClipState(newState);
+            } else {
+                // Apply stored processing from existing state
+                applyClipState(clip, *state);
             }
         }
         clips_.push_back(std::move(clip));
@@ -965,6 +999,20 @@ void MainWindow::onSelectionChanged() {
         audioPlayer_->setClip(clip);
         updateTimeDisplay();
         undoAction_->setEnabled(clip->hasOriginal() && clip->isModified());
+        
+        // Restore fade state for this clip from project
+        std::string relativePath = clip->displayName();
+        ClipState* state = projectManager_.project().findClipState(relativePath);
+        if (state) {
+            waveformView_->setFadeInLengthFrames(state->fadeInFrames);
+            waveformView_->setFadeOutLengthFrames(state->fadeOutFrames);
+            // Apply fade to audio player for non-destructive playback
+            audioPlayer_->setFadeEnvelope(state->fadeInFrames, state->fadeOutFrames);
+        } else {
+            waveformView_->setFadeInLengthFrames(0);
+            waveformView_->setFadeOutLengthFrames(0);
+            audioPlayer_->setFadeEnvelope(0, 0);
+        }
     }
 }
 
@@ -1227,6 +1275,25 @@ void MainWindow::onCompressAll() {
     applyProcessing(allIndices(), false, true);
 }
 
+void MainWindow::onEditModeChanged(bool isFadeMode) {
+    waveformView_->setEditMode(isFadeMode);
+}
+
+void MainWindow::onFadeChanged(int fadeInFrames, int fadeOutFrames) {
+    AudioClip* clip = currentClip();
+    if (!clip) return;
+    
+    std::string relativePath = clip->displayName();
+    ClipState* state = projectManager_.project().findClipState(relativePath);
+    if (state) {
+        state->fadeInFrames = fadeInFrames;
+        state->fadeOutFrames = fadeOutFrames;
+    }
+    
+    // Update audio player for immediate playback feedback
+    audioPlayer_->setFadeEnvelope(fadeInFrames, fadeOutFrames);
+}
+
 void MainWindow::applyProcessing(const std::vector<int>& indices, bool normalize, bool compress) {
     // Prevent starting new processing while one is in progress
     if (processWatcher_ && processWatcher_->isRunning()) {
@@ -1405,9 +1472,9 @@ void MainWindow::onExportAll() {
 
 void MainWindow::exportClips(const std::vector<int>& indices) {
     QString outputDir = outputPanel_->outputFolder();
-    bool overwrite = outputPanel_->overwriteOriginals();
+    bool overwriteOriginals = outputPanel_->overwriteOriginals();
 
-    if (outputDir.isEmpty() && !overwrite) {
+    if (outputDir.isEmpty() && !overwriteOriginals) {
         QMessageBox::warning(this, tr("No Output Folder"),
             tr("Please select an output folder or enable 'Overwrite original files'."));
         return;
@@ -1418,10 +1485,6 @@ void MainWindow::exportClips(const std::vector<int>& indices) {
         QMessageBox::warning(this, tr("Busy"), tr("An export operation is already in progress."));
         return;
     }
-
-    progressBar_->setMaximum(0);  // Indeterminate progress
-    progressBar_->setVisible(true);
-    statusBar()->showMessage(tr("Exporting %1 file(s)...").arg(indices.size()));
 
     // Get export settings from project (or use defaults)
     ExportFormat exportFormat = ExportFormat::WAV;
@@ -1445,13 +1508,27 @@ void MainWindow::exportClips(const std::vector<int>& indices) {
         metadata.comment = "Made by Woosh";
     }
 
+    // Determine file extension based on export format
+    QString extension;
+    switch (exportFormat) {
+        case ExportFormat::MP3: extension = ".mp3"; break;
+        case ExportFormat::OGG: extension = ".ogg"; break;
+        case ExportFormat::WAV: 
+        default: extension = ".wav"; break;
+    }
+
     // Collect clips and destination info for background thread
     struct ExportItem {
         AudioClip clip;  // Copy of clip data
         std::string destFolder;
+        std::string outputPath;  // Full output path for existence check
+        int fadeInFrames = 0;
+        int fadeOutFrames = 0;
     };
     std::vector<ExportItem> items;
     items.reserve(indices.size());
+
+    QStringList existingFiles;
 
     for (int idx : indices) {
         if (idx < 0 || idx >= static_cast<int>(clips_.size())) continue;
@@ -1459,15 +1536,64 @@ void MainWindow::exportClips(const std::vector<int>& indices) {
         const auto& clip = clips_[static_cast<size_t>(idx)];
         std::string destFolder;
 
-        if (overwrite) {
+        if (overwriteOriginals) {
             QFileInfo fi(QString::fromStdString(clip.filePath()));
             destFolder = fi.absolutePath().toStdString();
         } else {
             destFolder = outputDir.toStdString();
         }
 
-        items.push_back({clip, destFolder});
+        // Build output path to check for existing file
+        QFileInfo inputInfo(QString::fromStdString(clip.filePath()));
+        QString outputFileName = inputInfo.completeBaseName() + extension;
+        QString outputPath = QString::fromStdString(destFolder) + "/" + outputFileName;
+        
+        // Check if file exists when not overwriting originals
+        if (!overwriteOriginals && QFile::exists(outputPath)) {
+            existingFiles << outputFileName;
+        }
+
+        // Get fade state from project if available
+        int fadeInFrames = 0;
+        int fadeOutFrames = 0;
+        if (projectManager_.hasProject()) {
+            std::string relativePath = clip.displayName();
+            ClipState* state = projectManager_.project().findClipState(relativePath);
+            if (state) {
+                fadeInFrames = state->fadeInFrames;
+                fadeOutFrames = state->fadeOutFrames;
+            }
+        }
+
+        items.push_back({clip, destFolder, outputPath.toStdString(), fadeInFrames, fadeOutFrames});
     }
+
+    // If files exist and overwrite is off, ask user
+    if (!existingFiles.isEmpty()) {
+        QString fileList = existingFiles.join("\n");
+        if (existingFiles.size() > 10) {
+            fileList = existingFiles.mid(0, 10).join("\n") + 
+                       tr("\n... and %1 more files").arg(existingFiles.size() - 10);
+        }
+        
+        QMessageBox::StandardButton reply = QMessageBox::question(
+            this,
+            tr("Files Already Exist"),
+            tr("The following files already exist in the output folder:\n\n%1\n\n"
+               "Do you want to overwrite them?").arg(fileList),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No
+        );
+        
+        if (reply != QMessageBox::Yes) {
+            statusBar()->showMessage(tr("Export cancelled"));
+            return;
+        }
+    }
+
+    progressBar_->setMaximum(0);  // Indeterminate progress
+    progressBar_->setVisible(true);
+    statusBar()->showMessage(tr("Exporting %1 file(s)...").arg(indices.size()));
 
     // Create watcher if needed
     if (!exportWatcher_) {
@@ -1494,13 +1620,16 @@ void MainWindow::exportClips(const std::vector<int>& indices) {
             [engine, exportFormat, bitrate, metadata](const ExportItem& item) -> bool {
                 switch (exportFormat) {
                     case ExportFormat::MP3:
-                        return engine->exportMp3(item.clip, item.destFolder, bitrate, metadata);
+                        return engine->exportMp3(item.clip, item.destFolder, bitrate, metadata, 
+                                                 item.fadeInFrames, item.fadeOutFrames);
                     case ExportFormat::OGG:
                         // OGG export not yet implemented, fall back to WAV
-                        return engine->exportWav(item.clip, item.destFolder);
+                        return engine->exportWav(item.clip, item.destFolder, 
+                                                 item.fadeInFrames, item.fadeOutFrames);
                     case ExportFormat::WAV:
                     default:
-                        return engine->exportWav(item.clip, item.destFolder);
+                        return engine->exportWav(item.clip, item.destFolder, 
+                                                 item.fadeInFrames, item.fadeOutFrames);
                 }
             });
 
