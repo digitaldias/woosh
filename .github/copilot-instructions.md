@@ -92,6 +92,115 @@ Current version info is auto-generated to:
 3. **Audio Thread Safety**: Don't access UI from audio callbacks
 4. **Unicode Symbols**: Use appropriate fonts for transport button symbols
 
+## Testing Requirements
+
+### IMPORTANT: Write Tests for New Code
+
+All new functionality **must** include corresponding unit tests. Follow a 
+test-driven or test-alongside development approach:
+
+1. **When adding new functions/classes**: Write tests that verify the expected behavior
+2. **When fixing bugs**: Add a test that reproduces the bug first, then fix it
+3. **When refactoring**: Ensure existing tests pass; add tests if coverage is lacking
+
+### What to Test
+
+| Component Type | Test Focus |
+|----------------|------------|
+| **DSP functions** | Mathematical correctness, edge cases (empty, single sample, large buffers) |
+| **Audio codecs** | File loading/saving, format handling, error cases |
+| **AudioClip** | Sample manipulation, metrics calculation, undo/redo state |
+| **AudioEngine** | Processing pipeline, trim, normalize, compress operations |
+| **Utility classes** | FileScanner patterns, path handling |
+
+### What NOT to Test (in unit tests)
+
+- Qt widget rendering (use manual/integration testing)
+- Audio playback (requires audio hardware)
+- UI interactions (use Qt Test framework separately if needed)
+
+### Test File Location
+
+- All tests go in `src/tests/`
+- Test files named `*Tests.cpp` (e.g., `DSPTests.cpp`, `AudioClipTests.cpp`)
+- Add new test files to `WOOSH_TEST_SOURCES` in `CMakeLists.txt`
+
+### Test Structure
+
+Use simple assertions with descriptive test functions:
+
+```cpp
+#include <cassert>
+#include <cmath>
+#include "utils/DSP.h"
+
+// Helper to create test data
+static std::vector<float> makeTestSignal(size_t samples, float amplitude) {
+    std::vector<float> data(samples, amplitude);
+    return data;
+}
+
+static void testComputePeakDbFS_withSilence() {
+    std::vector<float> silence(1000, 0.0f);
+    float peak = DSP::computePeakDbFS(silence);
+    assert(peak < -90.0f);  // Should be very negative (approaching -inf)
+}
+
+static void testComputePeakDbFS_withFullScale() {
+    std::vector<float> fullScale = {1.0f, -1.0f, 0.5f};
+    float peak = DSP::computePeakDbFS(fullScale);
+    assert(peak > -0.1f && peak < 0.1f);  // Should be ~0 dBFS
+}
+
+static void testNormalizeToPeak_emptyBuffer() {
+    std::vector<float> empty;
+    DSP::normalizeToPeak(empty, -3.0f);  // Should not crash
+    assert(empty.empty());
+}
+
+// Register all tests in main()
+int main() {
+    testComputePeakDbFS_withSilence();
+    testComputePeakDbFS_withFullScale();
+    testNormalizeToPeak_emptyBuffer();
+    return 0;
+}
+```
+
+### Test Naming Convention
+
+- Test functions: `test<FunctionName>_<scenario>`
+- Examples:
+  - `testComputePeakDbFS_withSilence`
+  - `testNormalizeToPeak_largeBuffer`
+  - `testTrim_startAndEndBoundaries`
+  - `testLoadClip_invalidPath`
+
+### Running Tests
+
+```bash
+# Build and run tests
+cmake --build --preset x64-debug --target WooshTests
+ctest --preset x64-debug -C Debug
+
+# Run with verbose output
+ctest --preset x64-debug -C Debug --verbose
+```
+
+### Coverage Guidelines
+
+Aim for:
+- **100%** coverage of DSP/utility functions (pure logic, easy to test)
+- **High** coverage of AudioEngine operations
+- **Reasonable** coverage of model classes (AudioClip, ClipTableModel)
+
+### Before Committing
+
+Always run tests before pushing:
+```bash
+cmake --build --preset x64-debug --target WooshTests && ctest --preset x64-debug -C Debug
+```
+
 ## Patterns and practices to prioritize
 
 1. **RAII and smart ownership everywhere**
